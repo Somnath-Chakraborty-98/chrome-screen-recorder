@@ -15,6 +15,10 @@ export default defineConfig({
         popup: resolve(__dirname, 'src/popup/index.html'),
         options: resolve(__dirname, 'src/options/index.html'),
       },
+      output: {
+      entryFileNames: 'assets/[name].js',
+      assetFileNames: 'assets/[name][extname]'
+    }
     },
   },
   resolve: {
