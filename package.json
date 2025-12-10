@@ -6,7 +6,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "vite build && node scripts/build-manifest.js",
     "preview": "vite preview",
     "zip": "node scripts/pack.js"
   },
@@ -22,10 +22,13 @@
   },
   "homepage": "https://github.com/Somnath-Chakraborty-98/chrome-screen-recorder#readme",
   "dependencies": {
+    "idb": "^8.0.3",
     "react": "^19.2.1",
     "react-dom": "^19.2.1"
   },
   "devDependencies": {
+    "@types/chrome": "^0.1.32",
+    "@types/node": "^24.10.2",
     "@types/react": "^19.2.7",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^5.1.2",

@@ -1,0 +1,19 @@
+{
+  "manifest_version": 3,
+  "name": "Screen Recorder",
+  "version": "1.0.0",
+  "description": "Record screen + audio",
+  "action": {
+    "default_popup": "popup/index.html"
+  },
+  "background": {
+    "service_worker": "background/serviceWorker.js"
+  },
+  "permissions": [
+    "storage",
+    "downloads",
+    "activeTab",
+    "scripting"
+  ],
+  "host_permissions": []
+}

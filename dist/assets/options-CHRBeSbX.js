@@ -1,0 +1,1 @@
+import{c as n,j as e}from"./client-DxG0HZKh.js";function t(){return e.jsxs("div",{style:{padding:16},children:[e.jsx("h1",{children:"Extension Options"}),e.jsx("p",{children:"Configure API keys and preferences here."})]})}const r=document.getElementById("root");n.createRoot(r).render(e.jsx(t,{}));

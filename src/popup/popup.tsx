@@ -5,6 +5,8 @@ import RecordingList from './components/RecordingList';
 import TranscriptView from './components/TranscriptView';
 import '../popup/popup.css';
 import type { RecorderController } from '../shared/recorder/recorder';
+import { saveBlobWithChromeDownloads } from '../shared/storage/download';
+import { saveRecording, deleteRecording } from '../shared/storage/indexeddb'; // existing storage API
 
 function PopupApp() {
   const [recordings, setRecordings] = useState<Array<{ id: string; name: string; url?: string }>>([]);
@@ -36,29 +38,52 @@ function PopupApp() {
     }
   }
 
-  async function handleStop() {
-    if (!recorderRef.current) return;
+ async function handleStop() {
+  if (!recorderRef.current) return;
+  try {
+    const blob = await recorderRef.current.stop();
+    setIsRecording(false);
+    recorderRef.current = null;
+
+    // create an ID & filename
+    const id = `rec-${Date.now()}`;
+    const filename = `${id}.webm`;
+
+    // 1) Option A: Save to IndexedDB first (optional) --- existing behavior
+    // await saveRecording(id, blob, { name: filename });
+
+    // 2) Immediately save to local machine (prompt Save As)
     try {
-      const blob = await recorderRef.current.stop();
-      setIsRecording(false);
-      recorderRef.current = null;
-
-      // Create object URL for quick preview & store (in IndexedDB in your storage layer)
-      const id = `rec-${Date.now()}`;
-      const url = URL.createObjectURL(blob);
-      setRecordings((r) => [{ id, name: `${id}.webm`, url }, ...r]);
-
-      // Optionally, save blob to IndexedDB via storage wrapper
-      const dbMod = await import('../shared/storage/indexeddb');
-      await dbMod.saveRecording(id, blob, { name: `${id}.webm` });
-
-      // Optionally, start transcription/upload flow here
-      // Example placeholder that sets transcript to null
-      setTranscript(null);
+      // prompt user Save As dialog (true). Use false to attempt silent save.
+      await saveBlobWithChromeDownloads(blob, filename, true);
     } catch (err) {
-      console.error('Failed to stop recorder', err);
+      console.error('Download failed:', err);
+      // Optionally fallback: still save to IndexedDB
+      await saveRecording(id, blob, { name: filename });
+      // Inform user
+      alert('Automatic download failed; recording saved locally inside the extension.');
     }
+
+    // 3) If you saved to IndexedDB earlier (or for any reason you previously had saved),
+    // delete the stored copy to free chrome storage. We attempt deletion to ensure no duplicate.
+    try {
+      // If you did save earlier, delete it. If not present, deleteRecording should be a no-op.
+      await deleteRecording(id);
+    } catch (delErr) {
+      // If delete fails, log but continue
+      console.warn('Failed to delete indexeddb entry:', delErr);
+    }
+
+    // 4) Update UI state: remove objectURL previews and entries (we created none now)
+    setRecordings((r) => r.filter((rec) => rec.id !== id));
+
+    // 5) (Optional) show success message
+    // alert('Recording saved to your machine.');
+  } catch (err) {
+    console.error('Failed to stop recorder', err);
+    alert('Failed to finalize recording: ' + String(err));
   }
+}
 
   return (
     <div className="popup-root">
