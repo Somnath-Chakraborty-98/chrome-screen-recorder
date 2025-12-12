@@ -1,38 +1,16 @@
 {
-  "name": "chrome-screen-recorder",
+  "name": "screen-recorder-extension-mic-first",
   "version": "1.0.0",
-  "description": "Chrome Extension for screen recording",
+  "description": "",
   "main": "index.js",
-  "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build && node scripts/build-manifest.js",
-    "preview": "vite preview",
-    "zip": "node scripts/pack.js"
-  },
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/Somnath-Chakraborty-98/chrome-screen-recorder.git"
+    "build": "vite build"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "bugs": {
-    "url": "https://github.com/Somnath-Chakraborty-98/chrome-screen-recorder/issues"
-  },
-  "homepage": "https://github.com/Somnath-Chakraborty-98/chrome-screen-recorder#readme",
-  "dependencies": {
-    "idb": "^8.0.3",
-    "react": "^19.2.1",
-    "react-dom": "^19.2.1"
-  },
   "devDependencies": {
-    "@types/chrome": "^0.1.32",
-    "@types/node": "^24.10.2",
-    "@types/react": "^19.2.7",
-    "@types/react-dom": "^19.2.3",
-    "@vitejs/plugin-react": "^5.1.2",
-    "typescript": "^5.9.3",
-    "vite": "^7.2.7"
+    "vite": "^5.4.21"
   }
 }

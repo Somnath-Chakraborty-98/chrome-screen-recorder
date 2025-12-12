@@ -1,0 +1,22 @@
+{
+  "manifest_version": 3,
+  "name": "Screen Recorder with Audio (Mic-first)",
+  "description": "Chrome extension to record screen and audio; requests microphone permission first to ensure prompt appears.",
+  "version": "1.1.0",
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Screen Recorder"
+  },
+  "permissions": [
+    "storage",
+    "tabs",
+    "microphone",
+    "windows"
+  ],
+  "optional_permissions": ["microphone", "audioCapture"],
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}

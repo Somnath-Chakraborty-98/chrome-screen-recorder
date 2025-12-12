@@ -1,1 +1,0 @@
-// placeholder for .eslintrc.cjs
