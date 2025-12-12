@@ -46,6 +46,76 @@ function getSupportedMimeType() {
   return '';
 }
 
+// Detect when user stops sharing via browser's "Stop sharing" button
+function attachDisplayEndHandlers(displayStream) {
+  if (!displayStream) return;
+
+  const videoTrack = displayStream.getVideoTracks()[0];
+  if (!videoTrack) return;
+
+  // Method 1: Listen to 'ended' event on video track
+  videoTrack.addEventListener('ended', () => {
+    console.log('Display track ended - user stopped sharing');
+    // Auto-stop the recording
+    if (recorder && recorder.state !== 'inactive') {
+      stopRecordingFlow();
+    }
+
+    restoreExtensionWindow();
+  });
+
+  // Method 2: Poll for muted state (backup detection)
+  // Some browsers fire 'mute' before 'ended'
+  const pollId = setInterval(() => {
+    if (!videoTrack.muted && videoTrack.readyState === 'ended') {
+      console.log('Display track detected as ended via polling');
+      clearInterval(pollId);
+      if (recorder && recorder.state !== 'inactive') {
+        stopRecordingFlow();
+      }
+    }
+
+    // Also check if track is still live
+    if (videoTrack.readyState === 'ended') {
+      console.log('Video track readyState is ended');
+      clearInterval(pollId);
+      if (recorder && recorder.state !== 'inactive') {
+        stopRecordingFlow();
+      }
+    }
+  }, 1000);
+
+  // Store poll ID for cleanup
+  displayStream.__shareEndPollId = pollId;
+}
+
+// Restore and focus the extension window after recording stops
+function restoreExtensionWindow() {
+  try {
+    chrome.windows.getCurrent(win => {
+      if (chrome.runtime.lastError) {
+        console.warn('Could not get current window:', chrome.runtime.lastError);
+        return;
+      }
+
+      // Restore from minimized and focus
+      chrome.windows.update(win.id, {
+        state: "normal",
+        focused: true
+      }, (updatedWindow) => {
+        if (chrome.runtime.lastError) {
+          console.warn('Could not restore window:', chrome.runtime.lastError);
+        } else {
+          console.log('Extension window restored and focused');
+        }
+      });
+    });
+  } catch (e) {
+    console.warn('Error restoring window:', e);
+  }
+}
+
+
 // Check microphone permission state via Permissions API (may be unsupported)
 async function checkMicPermissionState() {
   if (!navigator.permissions) return null;
@@ -158,6 +228,14 @@ function handleRecorderStop() {
       }
       stopAllTracks(combinedStream);
     }
+
+    // ---- ADDED: clear share-end poll interval ----
+    try {
+      if (displayStream && displayStream.__shareEndPollId) {
+        clearInterval(displayStream.__shareEndPollId);
+      }
+    } catch (e) { }
+
     stopAllTracks(displayStream);
     stopAllTracks(micStream);
     combinedStream = null;
@@ -231,10 +309,36 @@ async function startRecordingFlow() {
       video: true,
       audio: includeSystemAudio
     });
+
+    // Minimize this persistent window after user clicks "Share"
+    try {
+      chrome.windows.getCurrent(win => {
+        try { chrome.windows.update(win.id, { state: "minimized" }); } catch (e) { /* ignore */ }
+      });
+    } catch (e) { /* ignore */ }
+
+    // Attach end-detection handlers to detect when user hits "Stop sharing"
+    attachDisplayEndHandlers(displayStream);
+
   } catch (err) {
-    console.error('Display capture failed:', err);
-    logStatus('Failed to start display capture: ' + (err && err.message ? err.message : err));
+    // Common user cancellations or permission denials — treat them silently.
+    const name = err && (err.name || (err.constructor && err.constructor.name)) || '';
+    const silentNames = ['AbortError', 'NotAllowedError', 'SecurityError', 'NotFoundError', 'NotReadableError'];
+    const isSilentCancel = silentNames.includes(name);
+
+    if (!isSilentCancel) {
+      // Unexpected error — warn for debugging
+      console.warn('Display capture failed:', err);
+      logStatus('Failed to start display capture: ' + (err && err.message ? err.message : err));
+    } else {
+      // Silent user cancel — just reset UI without noisy console messages
+      logStatus('Ready. Screen sharing was cancelled.');
+    }
+
+    // Stop any mic we opened earlier
     if (micStream) { stopAllTracks(micStream); micStream = null; }
+
+    // Reset UI
     startBtn.disabled = false;
     stopBtn.disabled = true;
     return;
@@ -320,6 +424,29 @@ function stopRecordingFlow() {
   }
 }
 
+// ==================================================
+// AUTO-START LOGIC FOR PERSISTENT WINDOW
+// ==================================================
+(function autoStartIfNeeded() {
+  try {
+    const params = new URL(location.href).searchParams;
+    const isWindow = params.get('mode') === 'window';
+    const auto = params.get('autostart') === '1';
+
+    if (isWindow && auto) {
+      setTimeout(() => {
+        if (!recorder && !startBtn.disabled) {
+          startRecordingFlow().catch(err =>
+            console.error('Auto-start failed:', err)
+          );
+        }
+      }, 200); // delay ensures UI ready
+    }
+  } catch (e) {
+    console.warn('Auto-start error:', e);
+  }
+})();
+
 // --- UI wiring ---
 startBtn.addEventListener('click', async () => {
   // If popup mode and not persistent, open a persistent window to avoid popup auto-close during screen chooser
@@ -327,9 +454,9 @@ startBtn.addEventListener('click', async () => {
     // open a persistent window and ask user to click Start there (avoids popup closing)
     try {
       chrome.windows.create({
-        url: chrome.runtime.getURL('popup.html?mode=window'),
+        url: chrome.runtime.getURL('popup.html?mode=window&autostart=1'),
         type: 'popup',
-        width: 520,
+        width: 800,
         height: 640
       });
       window.close(); // close the small popup so user uses the persistent window
