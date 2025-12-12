@@ -280,9 +280,8 @@ async function startRecordingFlow() {
     logStatus('Recorder error: ' + (ev && ev.error && ev.error.name ? ev.error.name : ev));
   };
 
-  // start recording (timeslice 1000ms)
   try {
-    recorder.start(1000);
+    recorder.start();
   } catch (err) {
     console.error('recorder.start failed:', err);
     logStatus('Could not start recorder: ' + (err && err.message ? err.message : err));
