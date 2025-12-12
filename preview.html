@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Recording Preview - Screen Recorder</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="stylesheet" href="preview.css" />
+</head>
+<body>
+  <div class="container">
+    <!-- Header -->
+    <header class="header">
+      <h1>📹 Recording Complete</h1>
+      <p class="subtitle">Review your recording before downloading</p>
+    </header>
+
+    <!-- Video Player -->
+    <div class="video-container">
+      <video id="recordedVideo" controls></video>
+    </div>
+
+    <!-- Recording Info -->
+    <div class="info-bar">
+      <div class="info-item">
+        <span class="label">Duration:</span>
+        <span id="duration" class="value">--:--</span>
+      </div>
+      <div class="info-item">
+        <span class="label">Size:</span>
+        <span id="fileSize" class="value">-- MB</span>
+      </div>
+      <div class="info-item">
+        <span class="label">Format:</span>
+        <span class="value">WebM</span>
+      </div>
+    </div>
+
+    <!-- Action Buttons -->
+    <div class="actions">
+      <button id="downloadBtn" class="btn btn-primary">
+        💾 Download Recording
+      </button>
+      <button id="discardBtn" class="btn btn-danger">
+        🗑️ Discard
+      </button>
+      <button id="newRecordingBtn" class="btn btn-secondary">
+        🔴 New Recording
+      </button>
+    </div>
+
+    <!-- Status Message -->
+    <div id="statusMessage" class="status-message hidden"></div>
+  </div>
+
+  <script src="preview.js"></script>
+</body>
+</html>

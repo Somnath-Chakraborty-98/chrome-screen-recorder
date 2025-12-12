@@ -339,8 +339,7 @@ function attachDisplayEndHandlers(displayStream) {
       stopRecordingFlow();
     }
 
-    // Restore window to foreground
-    restoreExtensionWindow();
+    // REMOVED: restoreExtensionWindow() - preview will open instead
   });
 
   // Method 2: Polling-based detection (backup)
@@ -356,8 +355,7 @@ function attachDisplayEndHandlers(displayStream) {
         stopRecordingFlow();
       }
 
-      // Restore window to foreground
-      restoreExtensionWindow();
+      // REMOVED: restoreExtensionWindow() - preview will open instead
     }
   }, 1000); // Check every second
 
@@ -400,47 +398,89 @@ function restoreExtensionWindow() {
 // ============================================================
 
 /**
- * Handles cleanup and file download when recording stops
- * Creates a blob from recorded chunks and triggers download
+ * Handles cleanup when recording stops
+ * Opens preview page instead of auto-downloading
  */
 function handleRecorderStop() {
-  console.log('Recorder stopped, processing recording...');
+  console.log('Recorder stopped, opening preview...');
 
   try {
     // Create blob from all recorded chunks
     const blob = new Blob(recordedChunks, { type: 'video/webm' });
-    const url = URL.createObjectURL(blob);
+    console.log('Recording blob created, size:', blob.size, 'bytes');
 
-    // Create download link
-    const downloadLink = document.createElement('a');
-    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-    downloadLink.href = url;
-    downloadLink.download = `screen-recording-${timestamp}.webm`;
+    // Convert blob to data URL for transfer
+    const reader = new FileReader();
+    reader.onloadend = function () {
+      const dataUrl = reader.result;
+      console.log('Data URL created, length:', dataUrl.length);
 
-    // Trigger download
-    document.body.appendChild(downloadLink);
-    downloadLink.click();
-    downloadLink.remove();
+      // Store in chrome.storage.local (works across extension pages)
+      chrome.storage.local.set({
+        recordingData: dataUrl,
+        recordingTimestamp: Date.now()
+      }, function () {
+        if (chrome.runtime.lastError) {
+          console.error('Error storing recording:', chrome.runtime.lastError);
+          fallbackDownload(blob);
+          return;
+        }
 
-    // Clean up blob URL after short delay
-    setTimeout(() => URL.revokeObjectURL(url), 5000);
+        console.log('Recording data stored successfully');
 
-    console.log('Recording saved successfully');
+        // Open preview page in new tab
+        chrome.tabs.create({
+          url: chrome.runtime.getURL('preview.html')
+        }, function (tab) {
+          console.log('Preview tab opened:', tab.id);
+        });
+      });
+    };
+
+    reader.onerror = function (error) {
+      console.error('Error reading blob:', error);
+      fallbackDownload(blob);
+    };
+
+    reader.readAsDataURL(blob);
+
   } catch (e) {
-    console.error('Error creating download:', e);
-    alert('Recording finished but failed to create download: ' + e);
+    console.error('Error processing recording:', e);
+    alert('Recording finished but failed to create preview: ' + e);
   } finally {
     // Cleanup all resources
     cleanupRecordingResources();
 
     // Reset UI state
-    logStatus('Recording saved.');
+    logStatus('Recording complete! Preview opened in new tab.');
     startBtn.disabled = false;
     stopBtn.disabled = true;
     recordedChunks = [];
+  }
+}
 
-    // Restore window to foreground
-    restoreExtensionWindow();
+/**
+ * Fallback download function if preview fails
+ * @param {Blob} blob - Recording blob to download
+ */
+function fallbackDownload(blob) {
+  console.log('Using fallback download method');
+
+  try {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    a.href = url;
+    a.download = `screen-recording-${timestamp}.webm`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+
+    alert('Recording saved! (Preview unavailable)');
+  } catch (e) {
+    console.error('Fallback download failed:', e);
+    alert('Failed to save recording: ' + e);
   }
 }
 
