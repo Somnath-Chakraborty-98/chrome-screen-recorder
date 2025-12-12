@@ -8,12 +8,9 @@
     "default_title": "Screen Recorder"
   },
   "permissions": [
-    "storage",
-    "tabs",
-    "microphone",
-    "windows"
+    "tabCapture"
   ],
-  "optional_permissions": ["microphone", "audioCapture"],
+
   "icons": {
     "16": "icons/icon16.png",
     "48": "icons/icon48.png",

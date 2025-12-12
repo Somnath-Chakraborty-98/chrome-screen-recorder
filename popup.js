@@ -3,8 +3,8 @@
 // Implements runtime mic permission request (optional), display+mic capture, audio mixing and MediaRecorder.
 
 const startBtn = document.getElementById('startBtn');
-const stopBtn  = document.getElementById('stopBtn');
-const preview  = document.getElementById('preview');
+const stopBtn = document.getElementById('stopBtn');
+const preview = document.getElementById('preview');
 const statusEl = document.getElementById('status');
 const openWindowBtn = document.getElementById('openWindowBtn');
 
@@ -22,9 +22,9 @@ function stopAllTracks(stream) {
   if (!stream) return;
   try {
     stream.getTracks().forEach(t => {
-      try { t.stop(); } catch (e) {}
+      try { t.stop(); } catch (e) { }
     });
-  } catch (e) {}
+  } catch (e) { }
 }
 function isPersistentWindow() {
   return new URL(location.href).searchParams.get('mode') === 'window';
@@ -41,7 +41,7 @@ function getSupportedMimeType() {
   for (const c of candidates) {
     try {
       if (MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(c)) return c;
-    } catch (e) {}
+    } catch (e) { }
   }
   return '';
 }
@@ -104,13 +104,22 @@ async function createCombinedStreamUsingAudioContext(displayStream, micStream) {
 
   function tryConnect(stream) {
     if (!stream) return;
+
+    // Check if stream has audio tracks before creating source
+    const audioTracks = stream.getAudioTracks();
+    if (!audioTracks || audioTracks.length === 0) {
+      console.log('Stream has no audio tracks, skipping...');
+      return;
+    }
+
     try {
       const src = audioContext.createMediaStreamSource(stream);
       src.connect(destination);
     } catch (err) {
-      console.warn('Could not create MediaStreamSource (maybe no audio tracks):', err);
+      console.warn('Could not create MediaStreamSource:', err);
     }
   }
+
 
   tryConnect(displayStream);
   if (hasMicAudio) tryConnect(micStream);
@@ -145,7 +154,7 @@ function handleRecorderStop() {
     // cleanup
     if (combinedStream) {
       if (combinedStream._audioContext) {
-        try { combinedStream._audioContext.close(); } catch (e) {}
+        try { combinedStream._audioContext.close(); } catch (e) { }
       }
       stopAllTracks(combinedStream);
     }
@@ -176,18 +185,19 @@ async function startRecordingFlow() {
   // 1) Try to request microphone permission if requested by user
   micStream = null;
   if (includeMic) {
+    // TODO
     // If we use optional_permissions, attempt chrome.permissions.request first
-    try {
-      // request optional microphone permission (this shows Chrome-level prompt to grant permission to extension)
-      const chromeGranted = await requestChromeMicrophonePermission();
-      // Even if chrome permission not granted, we can still attempt getUserMedia to trigger in-page prompt
-      if (!chromeGranted) {
-        // Not granted via chrome.permissions.request; we still attempt getUserMedia below to let site prompt (if allowed)
-        // This might show the browser-level mic prompt.
-      }
-    } catch (e) {
-      console.warn('chrome.permissions.request failed or unavailable:', e);
-    }
+    // try {
+    //   // request optional microphone permission (this shows Chrome-level prompt to grant permission to extension)
+    //   const chromeGranted = await requestChromeMicrophonePermission();
+    //   // Even if chrome permission not granted, we can still attempt getUserMedia to trigger in-page prompt
+    //   if (!chromeGranted) {
+    //     // Not granted via chrome.permissions.request; we still attempt getUserMedia below to let site prompt (if allowed)
+    //     // This might show the browser-level mic prompt.
+    //   }
+    // } catch (e) {
+    //   console.warn('chrome.permissions.request failed or unavailable:', e);
+    // }
 
     try {
       micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -296,7 +306,7 @@ function stopRecordingFlow() {
   } else {
     // Ensure everything stopped
     if (combinedStream && combinedStream._audioContext) {
-      try { combinedStream._audioContext.close(); } catch (e) {}
+      try { combinedStream._audioContext.close(); } catch (e) { }
     }
     stopAllTracks(combinedStream);
     stopAllTracks(displayStream);
@@ -354,10 +364,10 @@ openWindowBtn.addEventListener('click', () => {
 // In case of unexpected unload, try to stop streams (helpful while debugging)
 window.addEventListener('beforeunload', () => {
   if (recorder && recorder.state !== 'inactive') {
-    try { recorder.stop(); } catch (e) {}
+    try { recorder.stop(); } catch (e) { }
   }
   if (combinedStream && combinedStream._audioContext) {
-    try { combinedStream._audioContext.close(); } catch (e) {}
+    try { combinedStream._audioContext.close(); } catch (e) { }
   }
   stopAllTracks(combinedStream);
   stopAllTracks(displayStream);
