@@ -825,12 +825,13 @@ startBtn.addEventListener('click', async () => {
     console.log('Opening persistent window for recording...');
 
     try {
-      // Create persistent popup window
+      // Create persistent popup window with max size
       chrome.windows.create({
         url: chrome.runtime.getURL('popup.html?mode=window&autostart=1'),
         type: 'popup',
         width: 640,
-        height: 600
+        height: 600,
+        focused: true
       });
 
       // Close the small action popup
@@ -861,17 +862,40 @@ stopBtn.addEventListener('click', () => {
 
 /**
  * Cleanup on window/tab close
- * Ensures all streams are stopped to release camera/mic/screen
+ * Ensures all streams are stopped and asks confirmation if recording
  */
-window.addEventListener('beforeunload', () => {
-  console.log('Window closing, cleaning up resources...');
+window.addEventListener('beforeunload', (event) => {
+  console.log('Window closing...');
+
+  // If recording is active, ask for confirmation
+  if (recorder && recorder.state !== 'inactive') {
+    // Show confirmation dialog
+    const confirmationMessage = 'Recording is in progress. If you close this window, your recording will be lost. Are you sure?';
+
+    // Standard way to show confirmation dialog
+    event.preventDefault();
+    event.returnValue = confirmationMessage;
+
+    // For older browsers
+    return confirmationMessage;
+  }
+
+  // If not recording or user confirmed, clean up resources
+  cleanupOnClose();
+});
+
+/**
+ * Clean up all resources on window close
+ */
+function cleanupOnClose() {
+  console.log('Cleaning up resources on window close...');
 
   // Stop active recording
   if (recorder && recorder.state !== 'inactive') {
     try {
       recorder.stop();
     } catch (e) {
-      console.warn('Error stopping recorder on unload:', e);
+      console.warn('Error stopping recorder on close:', e);
     }
   }
 
@@ -880,7 +904,7 @@ window.addEventListener('beforeunload', () => {
     try {
       combinedStream._audioContext.close();
     } catch (e) {
-      console.warn('Error closing audio context on unload:', e);
+      console.warn('Error closing audio context on close:', e);
     }
   }
 
@@ -889,8 +913,8 @@ window.addEventListener('beforeunload', () => {
   stopAllTracks(displayStream);
   stopAllTracks(micStream);
 
-  console.log('Cleanup on unload complete');
-});
+  console.log('Cleanup on close complete');
+}
 
 // ============================================================
 // END OF POPUP.JS

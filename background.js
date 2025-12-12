@@ -39,11 +39,18 @@ function createRecorderWindow(meetingType) {
         height: 600,
         focused: true,
         top: 100,
-        left: 100
+        left: 100,
+        setSelfAsOpener: true
     }, (window) => {
         if (window) {
             recorderWindowId = window.id;
             console.log('Recorder window opened:', recorderWindowId);
+
+            // Set max size immediately after creation
+            chrome.windows.update(window.id, {
+                width: 640,
+                height: 600
+            });
         }
     });
 }
