@@ -14,13 +14,73 @@ const startBtn = document.getElementById('startBtn');
 const stopBtn = document.getElementById('stopBtn');
 const preview = document.getElementById('preview');
 const statusEl = document.getElementById('status');
+const includeSystemAudioCheckbox = document.getElementById('includeSystemAudio');
+const includeMicCheckbox = document.getElementById('includeMic');
 
 // Recording State
-let recorder = null;              // MediaRecorder instance
-let recordedChunks = [];          // Array to store recorded data chunks
-let combinedStream = null;        // Combined audio/video stream
-let displayStream = null;         // Screen capture stream
-let micStream = null;             // Microphone audio stream
+let recorder = null;
+let recordedChunks = [];
+let combinedStream = null;
+let displayStream = null;
+let micStream = null;
+
+// ============================================================
+// PREFERENCE MANAGEMENT
+// ============================================================
+
+/**
+ * Loads saved preferences from Chrome storage
+ * Restores checkbox states to user's last selection
+ */
+async function loadPreferences() {
+  try {
+    const result = await chrome.storage.local.get({
+      includeSystemAudio: false,  // Default: off
+      includeMic: true             // Default: on
+    });
+
+    includeSystemAudioCheckbox.checked = result.includeSystemAudio;
+    includeMicCheckbox.checked = result.includeMic;
+
+    console.log('Preferences loaded:', result);
+  } catch (e) {
+    console.warn('Error loading preferences:', e);
+  }
+}
+
+/**
+ * Saves current checkbox states to Chrome storage
+ * Called whenever a checkbox is changed
+ */
+async function savePreferences() {
+  try {
+    const preferences = {
+      includeSystemAudio: includeSystemAudioCheckbox.checked,
+      includeMic: includeMicCheckbox.checked
+    };
+
+    await chrome.storage.local.set(preferences);
+    console.log('Preferences saved:', preferences);
+  } catch (e) {
+    console.warn('Error saving preferences:', e);
+  }
+}
+
+/**
+ * Initialize preference management
+ * Load saved preferences and attach change listeners
+ */
+(function initializePreferences() {
+  // Load saved preferences on popup open
+  loadPreferences();
+
+  // Save preferences when checkboxes change
+  includeSystemAudioCheckbox.addEventListener('change', savePreferences);
+  includeMicCheckbox.addEventListener('change', savePreferences);
+
+  console.log('Preference management initialized');
+})();
+
 
 // ============================================================
 // INITIALIZATION - Meeting Detection Display
