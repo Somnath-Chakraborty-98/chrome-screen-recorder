@@ -26,13 +26,17 @@
   <div class="controls">
     <button id="startBtn">Start Recording</button>
     <button id="stopBtn" disabled>Stop</button>
-    <button id="openWindowBtn" style="float:right">Open Persistent Window</button>
   </div>
 
   <div class="muted-note">Preview is muted to avoid feedback.</div>
   <video id="preview" autoplay playsinline muted></video>
 
   <div id="status">Ready.</div>
+
+<div id="meetingInfo" style="display: none; padding: 10px; background: #e3f2fd; border-radius: 4px; margin-bottom: 10px;">
+  <strong>📹 Meeting Detected:</strong> <span id="meetingType"></span>
+</div>
+
 
   <div id="settingsInstructions" style="display:none"></div>
 

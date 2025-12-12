@@ -8,9 +8,31 @@
     "default_title": "Screen Recorder"
   },
   "permissions": [
-    "tabCapture"
+    "tabCapture",
+    "tabs",
+    "scripting"
   ],
-
+"host_permissions": [
+    "https://meet.google.com/*",
+    "https://*.zoom.us/*",
+    "https://teams.microsoft.com/*",
+    "https://*.teams.microsoft.com/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": [
+        "https://meet.google.com/*",
+        "https://*.zoom.us/*",
+        "https://teams.microsoft.com/*",
+        "https://*.teams.microsoft.com/*"
+      ],
+      "js": ["content.js"],
+      "run_at": "document_end"
+    }
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
   "icons": {
     "16": "icons/icon16.png",
     "48": "icons/icon48.png",

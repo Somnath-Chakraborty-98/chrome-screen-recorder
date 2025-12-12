@@ -6,13 +6,38 @@ const startBtn = document.getElementById('startBtn');
 const stopBtn = document.getElementById('stopBtn');
 const preview = document.getElementById('preview');
 const statusEl = document.getElementById('status');
-const openWindowBtn = document.getElementById('openWindowBtn');
 
 let recorder = null;
 let recordedChunks = [];
 let combinedStream = null;
 let displayStream = null;
 let micStream = null;
+
+// At the top of popup.js, after variable declarations
+(function showMeetingInfo() {
+  try {
+    const params = new URL(location.href).searchParams;
+    const meetingType = params.get('meeting');
+
+    if (meetingType && meetingType !== 'manual') {
+      const meetingInfo = document.getElementById('meetingInfo');
+      const meetingTypeSpan = document.getElementById('meetingType');
+
+      if (meetingInfo && meetingTypeSpan) {
+        const names = {
+          'google-meet': 'Google Meet',
+          'zoom': 'Zoom',
+          'teams': 'Microsoft Teams'
+        };
+
+        meetingTypeSpan.textContent = names[meetingType] || meetingType;
+        meetingInfo.style.display = 'block';
+      }
+    }
+  } catch (e) {
+    console.warn('Error showing meeting info:', e);
+  }
+})();
 
 // --- Utilities ---
 function logStatus(msg) {
@@ -472,20 +497,6 @@ startBtn.addEventListener('click', async () => {
 });
 
 stopBtn.addEventListener('click', stopRecordingFlow);
-
-// Open persistent window explicitly
-openWindowBtn.addEventListener('click', () => {
-  try {
-    chrome.windows.create({
-      url: chrome.runtime.getURL('popup.html?mode=window'),
-      type: 'popup',
-      width: 520,
-      height: 640
-    });
-  } catch (e) {
-    alert('Could not open window: ' + e);
-  }
-});
 
 // In case of unexpected unload, try to stop streams (helpful while debugging)
 window.addEventListener('beforeunload', () => {
