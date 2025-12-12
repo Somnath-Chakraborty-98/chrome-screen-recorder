@@ -1,20 +1,36 @@
-// popup.js
-// Works with manifest.json and popup.html provided above.
-// Implements runtime mic permission request (optional), display+mic capture, audio mixing and MediaRecorder.
+// ============================================================
+// SCREEN RECORDER - Main Controller
+// ============================================================
+// This script manages screen recording with audio mixing
+// capabilities for Chrome extension popup/window interface.
+// ============================================================
 
+// ============================================================
+// DOM ELEMENTS & STATE VARIABLES
+// ============================================================
+
+// UI Elements
 const startBtn = document.getElementById('startBtn');
 const stopBtn = document.getElementById('stopBtn');
 const preview = document.getElementById('preview');
 const statusEl = document.getElementById('status');
 
-let recorder = null;
-let recordedChunks = [];
-let combinedStream = null;
-let displayStream = null;
-let micStream = null;
+// Recording State
+let recorder = null;              // MediaRecorder instance
+let recordedChunks = [];          // Array to store recorded data chunks
+let combinedStream = null;        // Combined audio/video stream
+let displayStream = null;         // Screen capture stream
+let micStream = null;             // Microphone audio stream
 
-// At the top of popup.js, after variable declarations
-(function showMeetingInfo() {
+// ============================================================
+// INITIALIZATION - Meeting Detection Display
+// ============================================================
+
+/**
+ * Shows meeting platform information if opened from meeting detection
+ * Displays which platform (Google Meet, Zoom, Teams) triggered the popup
+ */
+(function initializeMeetingInfo() {
   try {
     const params = new URL(location.href).searchParams;
     const meetingType = params.get('meeting');
@@ -24,107 +40,286 @@ let micStream = null;
       const meetingTypeSpan = document.getElementById('meetingType');
 
       if (meetingInfo && meetingTypeSpan) {
-        const names = {
+        const platformNames = {
           'google-meet': 'Google Meet',
           'zoom': 'Zoom',
           'teams': 'Microsoft Teams'
         };
 
-        meetingTypeSpan.textContent = names[meetingType] || meetingType;
+        meetingTypeSpan.textContent = platformNames[meetingType] || meetingType;
         meetingInfo.style.display = 'block';
       }
     }
   } catch (e) {
-    console.warn('Error showing meeting info:', e);
+    console.warn('Error displaying meeting info:', e);
   }
 })();
 
-// --- Utilities ---
+// ============================================================
+// UTILITY FUNCTIONS
+// ============================================================
+
+/**
+ * Updates the status message displayed to the user
+ * @param {string} msg - Status message to display
+ */
 function logStatus(msg) {
   statusEl.textContent = msg;
 }
+
+/**
+ * Safely stops all tracks in a MediaStream
+ * @param {MediaStream} stream - Stream whose tracks should be stopped
+ */
 function stopAllTracks(stream) {
   if (!stream) return;
+
   try {
-    stream.getTracks().forEach(t => {
-      try { t.stop(); } catch (e) { }
+    stream.getTracks().forEach(track => {
+      try {
+        track.stop();
+      } catch (e) {
+        console.warn('Error stopping track:', e);
+      }
     });
-  } catch (e) { }
+  } catch (e) {
+    console.warn('Error iterating tracks:', e);
+  }
 }
+
+/**
+ * Checks if current page is in persistent window mode
+ * @returns {boolean} True if in persistent window mode
+ */
 function isPersistentWindow() {
   return new URL(location.href).searchParams.get('mode') === 'window';
 }
 
-// Probe best mime for MediaRecorder
+// ============================================================
+// MEDIA RECORDER CONFIGURATION
+// ============================================================
+
+/**
+ * Detects the best supported MIME type for MediaRecorder
+ * Tries VP9/VP8 with Opus audio in order of preference
+ * @returns {string} Supported MIME type or empty string
+ */
 function getSupportedMimeType() {
   const candidates = [
-    'video/webm;codecs=vp9,opus',
-    'video/webm;codecs=vp8,opus',
-    'video/webm;codecs=vp9',
-    'video/webm'
+    'video/webm;codecs=vp9,opus',  // Best quality
+    'video/webm;codecs=vp8,opus',  // Good compatibility
+    'video/webm;codecs=vp9',       // Video only VP9
+    'video/webm'                    // Fallback
   ];
-  for (const c of candidates) {
+
+  for (const mimeType of candidates) {
     try {
-      if (MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(c)) return c;
-    } catch (e) { }
+      if (MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(mimeType)) {
+        console.log('Using MIME type:', mimeType);
+        return mimeType;
+      }
+    } catch (e) {
+      console.warn('Error checking MIME type:', mimeType, e);
+    }
   }
+
+  console.warn('No preferred MIME types supported, using default');
   return '';
 }
 
-// Detect when user stops sharing via browser's "Stop sharing" button
+// ============================================================
+// PERMISSION MANAGEMENT
+// ============================================================
+
+/**
+ * Checks the current microphone permission state
+ * @returns {Promise<string|null>} Permission state ('granted', 'denied', 'prompt') or null
+ */
+async function checkMicPermissionState() {
+  if (!navigator.permissions) {
+    console.warn('Permissions API not available');
+    return null;
+  }
+
+  try {
+    const status = await navigator.permissions.query({ name: 'microphone' });
+    return status && status.state;
+  } catch (e) {
+    console.warn('Error checking microphone permission:', e);
+    return null;
+  }
+}
+
+/**
+ * Displays UI instructions when microphone access is permanently denied
+ * Shows step-by-step guide to re-enable microphone in Chrome settings
+ */
+function showMicDeniedUI() {
+  const instructions = `
+Microphone access is blocked.
+1) Open chrome://settings/content/microphone
+2) Allow microphone for this profile or site
+3) Re-open this extension and start again.
+  `.trim();
+
+  const instructionsEl = document.getElementById('settingsInstructions');
+  if (instructionsEl) {
+    instructionsEl.style.display = 'block';
+    instructionsEl.textContent = instructions;
+  }
+
+  logStatus('Microphone permission denied. See instructions below.');
+}
+
+// ============================================================
+// AUDIO MIXING - Web Audio API
+// ============================================================
+
+/**
+ * Creates a combined MediaStream with mixed audio tracks
+ * Uses Web Audio API to mix display audio and microphone audio
+ * 
+ * @param {MediaStream} displayStream - Screen capture stream (video + optional system audio)
+ * @param {MediaStream} micStream - Microphone audio stream
+ * @returns {Promise<MediaStream>} Combined stream with video and mixed audio
+ */
+async function createCombinedStreamUsingAudioContext(displayStream, micStream) {
+  const outputStream = new MediaStream();
+
+  // Add video track from display capture
+  const videoTrack = displayStream.getVideoTracks()[0];
+  if (videoTrack) {
+    outputStream.addTrack(videoTrack);
+    console.log('Added video track to output stream');
+  }
+
+  // Check if we have any audio to mix
+  const hasDisplayAudio = displayStream.getAudioTracks().length > 0;
+  const hasMicAudio = micStream && micStream.getAudioTracks && micStream.getAudioTracks().length > 0;
+
+  // If no audio from any source, return video-only stream
+  if (!hasDisplayAudio && !hasMicAudio) {
+    console.log('No audio tracks available, returning video-only stream');
+    return outputStream;
+  }
+
+  // Create audio mixing context
+  const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+  const destination = audioContext.createMediaStreamDestination();
+
+  /**
+   * Connects a MediaStream's audio to the audio mixing destination
+   * @param {MediaStream} stream - Stream to connect
+   */
+  function connectAudioSource(stream) {
+    if (!stream) return;
+
+    // Verify stream has audio tracks
+    const audioTracks = stream.getAudioTracks();
+    if (!audioTracks || audioTracks.length === 0) {
+      console.log('Stream has no audio tracks, skipping connection');
+      return;
+    }
+
+    try {
+      const source = audioContext.createMediaStreamSource(stream);
+      source.connect(destination);
+      console.log('Connected audio source to mixer');
+    } catch (err) {
+      console.warn('Could not create MediaStreamSource:', err);
+    }
+  }
+
+  // Connect both audio sources (if available)
+  connectAudioSource(displayStream);  // System audio
+  if (hasMicAudio) {
+    connectAudioSource(micStream);     // Microphone audio
+  }
+
+  // Add the mixed audio track to output
+  const mixedAudioTrack = destination.stream.getAudioTracks()[0];
+  if (mixedAudioTrack) {
+    outputStream.addTrack(mixedAudioTrack);
+    console.log('Added mixed audio track to output stream');
+  }
+
+  // Store references for cleanup later
+  outputStream._audioContext = audioContext;
+  outputStream._audioDestination = destination;
+
+  return outputStream;
+}
+
+// ============================================================
+// SCREEN SHARE END DETECTION
+// ============================================================
+
+/**
+ * Attaches event handlers to detect when user stops screen sharing
+ * Uses both event listeners and polling for reliable detection
+ * 
+ * @param {MediaStream} displayStream - The display capture stream to monitor
+ */
 function attachDisplayEndHandlers(displayStream) {
   if (!displayStream) return;
 
   const videoTrack = displayStream.getVideoTracks()[0];
-  if (!videoTrack) return;
+  if (!videoTrack) {
+    console.warn('No video track found to monitor');
+    return;
+  }
 
-  // Method 1: Listen to 'ended' event on video track
+  // Method 1: Event-based detection
+  // Fires when user clicks "Stop sharing" in browser UI
   videoTrack.addEventListener('ended', () => {
-    console.log('Display track ended - user stopped sharing');
-    // Auto-stop the recording
+    console.log('Video track ended - user stopped sharing');
+
+    // Auto-stop recording
     if (recorder && recorder.state !== 'inactive') {
       stopRecordingFlow();
     }
 
+    // Restore window to foreground
     restoreExtensionWindow();
   });
 
-  // Method 2: Poll for muted state (backup detection)
-  // Some browsers fire 'mute' before 'ended'
-  const pollId = setInterval(() => {
-    if (!videoTrack.muted && videoTrack.readyState === 'ended') {
-      console.log('Display track detected as ended via polling');
-      clearInterval(pollId);
-      if (recorder && recorder.state !== 'inactive') {
-        stopRecordingFlow();
-      }
-    }
-
-    // Also check if track is still live
+  // Method 2: Polling-based detection (backup)
+  // Some scenarios may not fire 'ended' event reliably
+  const pollInterval = setInterval(() => {
+    // Check if track has ended
     if (videoTrack.readyState === 'ended') {
-      console.log('Video track readyState is ended');
-      clearInterval(pollId);
+      console.log('Video track detected as ended via polling');
+      clearInterval(pollInterval);
+
+      // Auto-stop recording
       if (recorder && recorder.state !== 'inactive') {
         stopRecordingFlow();
       }
-    }
-  }, 1000);
 
-  // Store poll ID for cleanup
-  displayStream.__shareEndPollId = pollId;
+      // Restore window to foreground
+      restoreExtensionWindow();
+    }
+  }, 1000); // Check every second
+
+  // Store interval ID for cleanup
+  displayStream.__shareEndPollId = pollInterval;
+  console.log('Screen share end detection attached');
 }
 
-// Restore and focus the extension window after recording stops
+/**
+ * Restores and focuses the extension window
+ * Brings minimized window back to normal state after recording
+ */
 function restoreExtensionWindow() {
   try {
-    chrome.windows.getCurrent(win => {
+    chrome.windows.getCurrent(currentWindow => {
       if (chrome.runtime.lastError) {
         console.warn('Could not get current window:', chrome.runtime.lastError);
         return;
       }
 
-      // Restore from minimized and focus
-      chrome.windows.update(win.id, {
+      // Restore from minimized state and bring to focus
+      chrome.windows.update(currentWindow.id, {
         state: "normal",
         focused: true
       }, (updatedWindow) => {
@@ -140,182 +335,144 @@ function restoreExtensionWindow() {
   }
 }
 
+// ============================================================
+// RECORDING LIFECYCLE - Stop & Save
+// ============================================================
 
-// Check microphone permission state via Permissions API (may be unsupported)
-async function checkMicPermissionState() {
-  if (!navigator.permissions) return null;
-  try {
-    const s = await navigator.permissions.query({ name: 'microphone' });
-    return s && s.state;
-  } catch (e) {
-    return null;
-  }
-}
-
-// Request microphone optional permission via chrome.permissions (MV3 optional_permissions)
-function requestChromeMicrophonePermission() {
-  return new Promise(resolve => {
-    if (!chrome || !chrome.permissions) {
-      return resolve(false);
-    }
-    chrome.permissions.request({ permissions: ['microphone'] }, granted => resolve(!!granted));
-  });
-}
-
-// Show UI instructions when mic permanently denied
-function showMicDeniedUI() {
-  const instructions = `
-Microphone access is blocked.
-1) Open chrome://settings/content/microphone
-2) Allow microphone for this profile or site
-3) Re-open this extension and start again.
-  `.trim();
-  const el = document.getElementById('settingsInstructions');
-  if (el) {
-    el.style.display = 'block';
-    el.textContent = instructions;
-  }
-  logStatus('Microphone permission denied. See instructions below.');
-}
-
-// Create a mixed stream: video track from display + single mixed audio track from display audio + mic
-async function createCombinedStreamUsingAudioContext(displayStream, micStream) {
-  const out = new MediaStream();
-
-  // Add the display video track (if any)
-  const videoTrack = displayStream.getVideoTracks()[0];
-  if (videoTrack) out.addTrack(videoTrack);
-
-  // If no audio from either, return early
-  const hasDisplayAudio = displayStream.getAudioTracks().length > 0;
-  const hasMicAudio = micStream && micStream.getAudioTracks && micStream.getAudioTracks().length > 0;
-  if (!hasDisplayAudio && !hasMicAudio) {
-    return out;
-  }
-
-  // Mix using AudioContext
-  const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-  const destination = audioContext.createMediaStreamDestination();
-
-  function tryConnect(stream) {
-    if (!stream) return;
-
-    // Check if stream has audio tracks before creating source
-    const audioTracks = stream.getAudioTracks();
-    if (!audioTracks || audioTracks.length === 0) {
-      console.log('Stream has no audio tracks, skipping...');
-      return;
-    }
-
-    try {
-      const src = audioContext.createMediaStreamSource(stream);
-      src.connect(destination);
-    } catch (err) {
-      console.warn('Could not create MediaStreamSource:', err);
-    }
-  }
-
-
-  tryConnect(displayStream);
-  if (hasMicAudio) tryConnect(micStream);
-
-  // Add mixed audio track
-  const mixedTrack = destination.stream.getAudioTracks()[0];
-  if (mixedTrack) out.addTrack(mixedTrack);
-
-  // Keep references to close later
-  out._audioContext = audioContext;
-  out._audioDestination = destination;
-  return out;
-}
-
-// Handle finalization (download blob) when recorder stops
+/**
+ * Handles cleanup and file download when recording stops
+ * Creates a blob from recorded chunks and triggers download
+ */
 function handleRecorderStop() {
+  console.log('Recorder stopped, processing recording...');
+
   try {
+    // Create blob from all recorded chunks
     const blob = new Blob(recordedChunks, { type: 'video/webm' });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    const ts = new Date().toISOString().replace(/[:.]/g, '-');
-    a.href = url;
-    a.download = `screen-recording-${ts}.webm`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
+
+    // Create download link
+    const downloadLink = document.createElement('a');
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    downloadLink.href = url;
+    downloadLink.download = `screen-recording-${timestamp}.webm`;
+
+    // Trigger download
+    document.body.appendChild(downloadLink);
+    downloadLink.click();
+    downloadLink.remove();
+
+    // Clean up blob URL after short delay
     setTimeout(() => URL.revokeObjectURL(url), 5000);
+
+    console.log('Recording saved successfully');
   } catch (e) {
     console.error('Error creating download:', e);
     alert('Recording finished but failed to create download: ' + e);
   } finally {
-    // cleanup
-    if (combinedStream) {
-      if (combinedStream._audioContext) {
-        try { combinedStream._audioContext.close(); } catch (e) { }
-      }
-      stopAllTracks(combinedStream);
-    }
+    // Cleanup all resources
+    cleanupRecordingResources();
 
-    // ---- ADDED: clear share-end poll interval ----
-    try {
-      if (displayStream && displayStream.__shareEndPollId) {
-        clearInterval(displayStream.__shareEndPollId);
-      }
-    } catch (e) { }
-
-    stopAllTracks(displayStream);
-    stopAllTracks(micStream);
-    combinedStream = null;
-    displayStream = null;
-    micStream = null;
-
-    preview.srcObject = null;
+    // Reset UI state
     logStatus('Recording saved.');
     startBtn.disabled = false;
     stopBtn.disabled = true;
     recordedChunks = [];
+
+    // Restore window to foreground
+    restoreExtensionWindow();
   }
 }
 
-// --- Core start/stop functions ---
+/**
+ * Cleans up all recording-related resources
+ * Stops tracks, closes audio context, clears intervals
+ */
+function cleanupRecordingResources() {
+  console.log('Cleaning up recording resources...');
+
+  // Close audio context
+  if (combinedStream && combinedStream._audioContext) {
+    try {
+      combinedStream._audioContext.close();
+      console.log('Audio context closed');
+    } catch (e) {
+      console.warn('Error closing audio context:', e);
+    }
+  }
+
+  // Stop combined stream tracks
+  stopAllTracks(combinedStream);
+
+  // Clear screen share end detection interval
+  try {
+    if (displayStream && displayStream.__shareEndPollId) {
+      clearInterval(displayStream.__shareEndPollId);
+      console.log('Cleared share-end poll interval');
+    }
+  } catch (e) {
+    console.warn('Error clearing poll interval:', e);
+  }
+
+  // Stop display and mic streams
+  stopAllTracks(displayStream);
+  stopAllTracks(micStream);
+
+  // Clear stream references
+  combinedStream = null;
+  displayStream = null;
+  micStream = null;
+
+  // Clear preview
+  preview.srcObject = null;
+
+  console.log('Resource cleanup complete');
+}
+
+// ============================================================
+// RECORDING LIFECYCLE - Start Recording
+// ============================================================
+
+/**
+ * Main recording flow - handles permissions, stream capture, and recording start
+ * Coordinates microphone access, screen capture, and MediaRecorder initialization
+ */
 async function startRecordingFlow() {
+  console.log('Starting recording flow...');
+
+  // Disable UI during setup
   startBtn.disabled = true;
   stopBtn.disabled = true;
   document.getElementById('settingsInstructions').style.display = 'none';
   logStatus('Preparing...');
 
+  // Get user preferences from checkboxes
   const includeSystemAudio = document.getElementById('includeSystemAudio').checked;
   const includeMic = document.getElementById('includeMic').checked;
 
-  // 1) Try to request microphone permission if requested by user
+  // ========================================
+  // STEP 1: Request Microphone Permission
+  // ========================================
   micStream = null;
   if (includeMic) {
-    // TODO
-    // If we use optional_permissions, attempt chrome.permissions.request first
-    // try {
-    //   // request optional microphone permission (this shows Chrome-level prompt to grant permission to extension)
-    //   const chromeGranted = await requestChromeMicrophonePermission();
-    //   // Even if chrome permission not granted, we can still attempt getUserMedia to trigger in-page prompt
-    //   if (!chromeGranted) {
-    //     // Not granted via chrome.permissions.request; we still attempt getUserMedia below to let site prompt (if allowed)
-    //     // This might show the browser-level mic prompt.
-    //   }
-    // } catch (e) {
-    //   console.warn('chrome.permissions.request failed or unavailable:', e);
-    // }
+    console.log('Requesting microphone access...');
 
     try {
       micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      console.log('Mic stream obtained', micStream);
+      console.log('Microphone access granted');
     } catch (err) {
       console.error('Microphone request failed:', err);
-      const state = await checkMicPermissionState();
-      if (state === 'denied') {
+
+      // Check if permission was explicitly denied
+      const permissionState = await checkMicPermissionState();
+      if (permissionState === 'denied') {
         showMicDeniedUI();
         startBtn.disabled = false;
         stopBtn.disabled = true;
         logStatus('Microphone permission is denied.');
         return;
       } else {
-        // Ask user whether to continue without mic
+        // Ask user if they want to continue without microphone
         const proceed = confirm('Microphone access failed or was blocked. Continue without microphone?');
         if (!proceed) {
           logStatus('Recording cancelled because microphone is required.');
@@ -324,44 +481,57 @@ async function startRecordingFlow() {
           return;
         }
         micStream = null;
+        console.log('Continuing without microphone');
       }
     }
   }
 
-  // 2) Request display capture (screen) - this will trigger screen-share chooser
+  // ========================================
+  // STEP 2: Request Screen Capture
+  // ========================================
+  console.log('Requesting display capture...');
+
   try {
     displayStream = await navigator.mediaDevices.getDisplayMedia({
       video: true,
       audio: includeSystemAudio
     });
+    console.log('Display capture started');
 
-    // Minimize this persistent window after user clicks "Share"
+    // Minimize extension window during recording
     try {
       chrome.windows.getCurrent(win => {
-        try { chrome.windows.update(win.id, { state: "minimized" }); } catch (e) { /* ignore */ }
+        chrome.windows.update(win.id, { state: "minimized" });
+        console.log('Extension window minimized');
       });
-    } catch (e) { /* ignore */ }
+    } catch (e) {
+      console.warn('Could not minimize window:', e);
+    }
 
-    // Attach end-detection handlers to detect when user hits "Stop sharing"
+    // Attach handlers to detect when user stops sharing
     attachDisplayEndHandlers(displayStream);
 
   } catch (err) {
-    // Common user cancellations or permission denials — treat them silently.
-    const name = err && (err.name || (err.constructor && err.constructor.name)) || '';
-    const silentNames = ['AbortError', 'NotAllowedError', 'SecurityError', 'NotFoundError', 'NotReadableError'];
-    const isSilentCancel = silentNames.includes(name);
+    // Handle screen capture errors
+    const errorName = err && (err.name || (err.constructor && err.constructor.name)) || '';
+    const silentErrorNames = ['AbortError', 'NotAllowedError', 'SecurityError', 'NotFoundError', 'NotReadableError'];
+    const isUserCancellation = silentErrorNames.includes(errorName);
 
-    if (!isSilentCancel) {
-      // Unexpected error — warn for debugging
+    if (!isUserCancellation) {
+      // Unexpected error - log for debugging
       console.warn('Display capture failed:', err);
       logStatus('Failed to start display capture: ' + (err && err.message ? err.message : err));
     } else {
-      // Silent user cancel — just reset UI without noisy console messages
+      // User cancelled screen sharing - handle silently
+      console.log('User cancelled screen sharing');
       logStatus('Ready. Screen sharing was cancelled.');
     }
 
-    // Stop any mic we opened earlier
-    if (micStream) { stopAllTracks(micStream); micStream = null; }
+    // Clean up microphone stream if opened
+    if (micStream) {
+      stopAllTracks(micStream);
+      micStream = null;
+    }
 
     // Reset UI
     startBtn.disabled = false;
@@ -369,144 +539,260 @@ async function startRecordingFlow() {
     return;
   }
 
-  // 3) Create mixed combined stream (video + single mixed audio track)
+  // ========================================
+  // STEP 3: Mix Audio Streams
+  // ========================================
+  console.log('Creating combined stream with audio mixing...');
+
   try {
     combinedStream = await createCombinedStreamUsingAudioContext(displayStream, micStream);
+    console.log('Combined stream created successfully');
   } catch (err) {
     console.error('Failed to create combined stream:', err);
     logStatus('Failed to prepare audio mixing: ' + (err && err.message ? err.message : err));
+
+    // Cleanup
     stopAllTracks(displayStream);
     if (micStream) stopAllTracks(micStream);
+
+    // Reset UI
     startBtn.disabled = false;
     stopBtn.disabled = true;
     return;
   }
 
-  // 4) Preview the stream (muted)
+  // ========================================
+  // STEP 4: Setup Preview
+  // ========================================
   preview.srcObject = combinedStream;
-  preview.muted = true;
+  preview.muted = true;  // Mute to avoid audio feedback
+  console.log('Preview stream attached');
 
-  // 5) Create MediaRecorder using best mime
-  const mime = getSupportedMimeType();
+  // ========================================
+  // STEP 5: Create MediaRecorder
+  // ========================================
+  console.log('Creating MediaRecorder...');
+
+  const mimeType = getSupportedMimeType();
   try {
-    recorder = mime ? new MediaRecorder(combinedStream, { mimeType: mime }) : new MediaRecorder(combinedStream);
+    recorder = mimeType
+      ? new MediaRecorder(combinedStream, { mimeType: mimeType })
+      : new MediaRecorder(combinedStream);
+
+    console.log('MediaRecorder created');
   } catch (err) {
     console.error('MediaRecorder creation failed:', err);
     logStatus('Recording failed: ' + (err && err.message ? err.message : err));
+
+    // Cleanup
     stopAllTracks(combinedStream);
     stopAllTracks(displayStream);
     if (micStream) stopAllTracks(micStream);
+
+    // Reset UI
     startBtn.disabled = false;
     stopBtn.disabled = true;
     return;
   }
 
+  // ========================================
+  // STEP 6: Setup Recorder Event Handlers
+  // ========================================
   recordedChunks = [];
-  recorder.ondataavailable = (e) => { if (e.data && e.data.size) recordedChunks.push(e.data); };
-  recorder.onstop = handleRecorderStop;
-  recorder.onerror = (ev) => {
-    console.error('Recorder error:', ev);
-    logStatus('Recorder error: ' + (ev && ev.error && ev.error.name ? ev.error.name : ev));
+
+  // Collect data chunks as they become available
+  recorder.ondataavailable = (event) => {
+    if (event.data && event.data.size > 0) {
+      recordedChunks.push(event.data);
+      console.log(`Recorded chunk: ${event.data.size} bytes`);
+    }
   };
 
+  // Handle recording stop
+  recorder.onstop = handleRecorderStop;
+
+  // Handle recorder errors
+  recorder.onerror = (event) => {
+    console.error('Recorder error:', event);
+    logStatus('Recorder error: ' + (event && event.error && event.error.name ? event.error.name : event));
+  };
+
+  // ========================================
+  // STEP 7: Start Recording
+  // ========================================
+  console.log('Starting MediaRecorder...');
+
   try {
-    recorder.start();
+    recorder.start();  // Start recording (collects all data until stop)
+    console.log('Recording started successfully');
   } catch (err) {
-    console.error('recorder.start failed:', err);
+    console.error('recorder.start() failed:', err);
     logStatus('Could not start recorder: ' + (err && err.message ? err.message : err));
+
+    // Cleanup
     stopAllTracks(combinedStream);
     stopAllTracks(displayStream);
     if (micStream) stopAllTracks(micStream);
+
+    // Reset UI
     startBtn.disabled = false;
     stopBtn.disabled = true;
     return;
   }
 
+  // Update UI for active recording
   startBtn.disabled = true;
   stopBtn.disabled = false;
   logStatus('Recording... Click Stop to finish.');
+  console.log('Recording flow complete - now recording');
 }
 
+// ============================================================
+// RECORDING LIFECYCLE - Stop Recording
+// ============================================================
+
+/**
+ * Stops the active recording and cleans up resources
+ * Can be called manually (Stop button) or automatically (share ended)
+ */
 function stopRecordingFlow() {
+  console.log('Stopping recording flow...');
+
   if (recorder && recorder.state !== 'inactive') {
     logStatus('Stopping...');
-    try { recorder.stop(); } catch (e) { console.warn('Error stopping recorder', e); }
-  } else {
-    // Ensure everything stopped
-    if (combinedStream && combinedStream._audioContext) {
-      try { combinedStream._audioContext.close(); } catch (e) { }
+    try {
+      recorder.stop();  // Triggers handleRecorderStop callback
+      console.log('Recorder stopped');
+    } catch (e) {
+      console.warn('Error stopping recorder:', e);
     }
-    stopAllTracks(combinedStream);
-    stopAllTracks(displayStream);
-    stopAllTracks(micStream);
-    combinedStream = null;
-    displayStream = null;
-    micStream = null;
-    preview.srcObject = null;
+  } else {
+    // Recorder already stopped or never started - manual cleanup
+    console.log('Recorder not active, performing manual cleanup');
+    cleanupRecordingResources();
+
+    // Reset UI
     logStatus('Stopped.');
     startBtn.disabled = false;
     stopBtn.disabled = true;
   }
 }
 
-// ==================================================
-// AUTO-START LOGIC FOR PERSISTENT WINDOW
-// ==================================================
-(function autoStartIfNeeded() {
+// ============================================================
+// AUTO-START LOGIC
+// ============================================================
+
+/**
+ * Automatically starts recording if opened with autostart parameter
+ * Used when extension is triggered from meeting detection
+ */
+(function initializeAutoStart() {
   try {
     const params = new URL(location.href).searchParams;
     const isWindow = params.get('mode') === 'window';
-    const auto = params.get('autostart') === '1';
+    const shouldAutoStart = params.get('autostart') === '1';
 
-    if (isWindow && auto) {
+    if (isWindow && shouldAutoStart) {
+      console.log('Auto-start requested, starting recording...');
+
+      // Small delay to ensure UI is fully loaded
       setTimeout(() => {
         if (!recorder && !startBtn.disabled) {
           startRecordingFlow().catch(err =>
             console.error('Auto-start failed:', err)
           );
         }
-      }, 200); // delay ensures UI ready
+      }, 200);
     }
   } catch (e) {
-    console.warn('Auto-start error:', e);
+    console.warn('Auto-start initialization error:', e);
   }
 })();
 
-// --- UI wiring ---
+// ============================================================
+// EVENT HANDLERS - UI Interactions
+// ============================================================
+
+/**
+ * Start button click handler
+ * Opens persistent window if in popup mode, otherwise starts recording
+ */
 startBtn.addEventListener('click', async () => {
-  // If popup mode and not persistent, open a persistent window to avoid popup auto-close during screen chooser
+  console.log('Start button clicked');
+
+  // Check if we're in popup mode (needs persistent window)
   if (!isPersistentWindow()) {
-    // open a persistent window and ask user to click Start there (avoids popup closing)
+    console.log('Opening persistent window for recording...');
+
     try {
+      // Create persistent popup window
       chrome.windows.create({
         url: chrome.runtime.getURL('popup.html?mode=window&autostart=1'),
         type: 'popup',
-        width: 800,
-        height: 640
+        width: 640,
+        height: 600
       });
-      window.close(); // close the small popup so user uses the persistent window
+
+      // Close the small action popup
+      window.close();
       return;
     } catch (e) {
       console.warn('Could not open persistent window, continuing in popup:', e);
-      // fallthrough to start in popup (may cause popup to close during screen prompt)
+      // Fallthrough to start in popup (may close during screen selection)
     }
   }
 
-  // If we are already in persistent window OR chrome.windows.create failed, start the flow directly
+  // Already in persistent window - start recording directly
   await startRecordingFlow();
 });
 
-stopBtn.addEventListener('click', stopRecordingFlow);
+/**
+ * Stop button click handler
+ * Manually stops active recording
+ */
+stopBtn.addEventListener('click', () => {
+  console.log('Stop button clicked');
+  stopRecordingFlow();
+});
 
-// In case of unexpected unload, try to stop streams (helpful while debugging)
+// ============================================================
+// EVENT HANDLERS - Window Lifecycle
+// ============================================================
+
+/**
+ * Cleanup on window/tab close
+ * Ensures all streams are stopped to release camera/mic/screen
+ */
 window.addEventListener('beforeunload', () => {
+  console.log('Window closing, cleaning up resources...');
+
+  // Stop active recording
   if (recorder && recorder.state !== 'inactive') {
-    try { recorder.stop(); } catch (e) { }
+    try {
+      recorder.stop();
+    } catch (e) {
+      console.warn('Error stopping recorder on unload:', e);
+    }
   }
+
+  // Close audio context
   if (combinedStream && combinedStream._audioContext) {
-    try { combinedStream._audioContext.close(); } catch (e) { }
+    try {
+      combinedStream._audioContext.close();
+    } catch (e) {
+      console.warn('Error closing audio context on unload:', e);
+    }
   }
+
+  // Stop all streams
   stopAllTracks(combinedStream);
   stopAllTracks(displayStream);
   stopAllTracks(micStream);
+
+  console.log('Cleanup on unload complete');
 });
+
+// ============================================================
+// END OF POPUP.JS
+// ============================================================
+console.log('Screen Recorder extension loaded successfully');
