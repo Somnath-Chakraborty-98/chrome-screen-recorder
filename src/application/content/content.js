@@ -1,7 +1,20 @@
 // content.js
 // Detects when user is in a meeting and notifies background script
 
-let hasNotified = false; // Prevent multiple notifications
+// Prevent multiple script injections
+if (window.meetingDetectionLoaded) {
+  console.log('Meeting detection already loaded, skipping...');
+  throw new Error('Script already loaded');
+}
+window.meetingDetectionLoaded = true;
+
+// Track meeting sessions to prevent duplicate notifications
+let meetingSessionId = null; // Unique ID for current meeting session
+let currentMeetingType = null;
+
+function generateSessionId() {
+  return Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+}
 
 function detectMeetingPage() {
   const url = window.location.href;
@@ -12,16 +25,22 @@ function detectMeetingPage() {
     return 'google-meet';
   }
 
-  // Zoom detection
-  if (url.includes('zoom.us/') && (url.includes('/j/') || url.includes('/wc/join/'))) {
-    return 'zoom';
+  // Zoom detection - ONLY actual meeting pages
+  if (url.includes('zoom.us/')) {
+    if (url.match(/zoom\.us\/wc\/join\/\d+/) ||
+      url.match(/zoom\.us\/wc\/\d+/) ||
+      url.match(/zoom\.us\/j\/\d+/) ||
+      hash.includes('/join') ||
+      hash.includes('/wc/join/')) {
+      return 'zoom';
+    }
+    return null; // Dashboard or other non-meeting pages
   }
 
-  // Microsoft Teams detection - STRICT (only when actually in meeting)
+  // Microsoft Teams detection
   if (url.includes('teams.microsoft.com') || url.includes('.teams.microsoft.com') ||
     url.includes('teams.live.com') || url.includes('.teams.live.com')) {
 
-    // Check URL patterns for actual meeting
     if (url.includes('/l/meetup-join/') ||
       url.includes('/_#/l/meetup-join/') ||
       url.includes('/_#/pre-join-calling/') ||
@@ -33,8 +52,6 @@ function detectMeetingPage() {
       return 'teams';
     }
 
-    // For teams.live.com, URL doesn't change - detect by UI elements
-    // Check if we're actually IN a meeting (has Leave button + Mute)
     if (isTeamsMeetingUIPresent()) {
       console.log('Teams meeting detected via UI elements');
       return 'teams';
@@ -45,103 +62,130 @@ function detectMeetingPage() {
 }
 
 function isTeamsMeetingUIPresent() {
-  // STRICT: Must have Leave/Hang up button (only present during active call)
   const hasLeaveButton = document.querySelector('button[aria-label*="Leave"]') ||
     document.querySelector('button[aria-label*="Hang up"]') ||
     document.querySelector('button[title*="Leave"]') ||
     document.querySelector('button[title*="Hang up"]');
 
   if (!hasLeaveButton) {
-    console.log('No Leave button found - not in meeting');
     return false;
   }
 
-  // Also check for Mute button (double confirmation)
   const hasMuteControl = document.querySelector('button[aria-label*="Mute"]') ||
     document.querySelector('button[aria-label*="microphone"]') ||
     document.querySelector('button[title*="Mute"]');
 
-  if (hasLeaveButton && hasMuteControl) {
-    console.log('Leave + Mute buttons found - IN MEETING');
-    return true;
-  }
-
-  console.log('Missing required controls for meeting detection');
-  return false;
+  return hasLeaveButton && hasMuteControl;
 }
 
 function isMeetingActive() {
   const meetingType = detectMeetingPage();
 
   if (meetingType === 'google-meet') {
-    // Check if video grid or participant elements exist
     return document.querySelector('[data-meeting-title]') ||
       document.querySelector('[data-participant-id]') ||
-      document.querySelector('[jsname="HNNBSb"]'); // Google Meet video container
+      document.querySelector('[jsname="HNNBSb"]');
   }
 
   if (meetingType === 'zoom') {
-    // Check for Zoom meeting container
-    return document.querySelector('#wc-container') ||
-      document.querySelector('.meeting-client') ||
-      document.querySelector('[id*="video"]');
+    // Check for webclient iframe or meeting controls
+    const hasWebClientIframe = document.querySelector('#webclient') ||
+      document.querySelector('iframe[id*="webclient"]') ||
+      document.querySelector('iframe[src*="zoom.us"]');
+
+    const hasMeetingControls = document.querySelector('button[aria-label*="Mute"]') ||
+      document.querySelector('button[aria-label*="Leave"]');
+
+    return hasWebClientIframe || hasMeetingControls;
   }
 
   if (meetingType === 'teams') {
-    // For Teams, the UI check is already done in detectMeetingPage
     return isTeamsMeetingUIPresent();
   }
 
   return false;
 }
 
-// Wait for meeting to fully load, then notify background
-function checkAndNotify() {
-  // Don't notify again if already notified
-  if (hasNotified) {
-    return true;
+// Extract meeting identifier from URL to track unique sessions
+function getMeetingIdentifier() {
+  const url = window.location.href;
+  const hash = window.location.hash;
+
+  // For Zoom: extract meeting ID
+  const zoomMatch = url.match(/\/(?:wc\/join\/|wc\/|j\/)(\d+)/);
+  if (zoomMatch) return 'zoom_' + zoomMatch[1];
+
+  // For Meet: extract meeting code
+  const meetMatch = url.match(/meet\.google\.com\/([a-z]{3}-[a-z]{4}-[a-z]{3})/);
+  if (meetMatch) return 'meet_' + meetMatch[1];
+
+  // For Teams: use hash or URL pattern
+  if (hash.includes('meetup-join') || url.includes('/l/meetup-join/')) {
+    return 'teams_' + (hash || url).replace(/[^a-z0-9]/gi, '_').substr(0, 50);
   }
 
+  return null;
+}
+
+function checkAndNotify() {
   const meetingType = detectMeetingPage();
+  const meetingIdentifier = getMeetingIdentifier();
 
-  if (meetingType && isMeetingActive()) {
-    console.log(`Meeting detected: ${meetingType}`);
+  // No meeting detected
+  if (!meetingType || !isMeetingActive()) {
+    // Clear session if we left the meeting
+    if (meetingSessionId && currentMeetingType) {
+      console.log('Left meeting, clearing session:', meetingSessionId);
+      meetingSessionId = null;
+      currentMeetingType = null;
+    }
+    return false;
+  }
 
-    // Send message to background script to open recorder
+  // Check if this is a NEW meeting session
+  const isNewMeeting = meetingSessionId === null ||
+    meetingIdentifier !== currentMeetingType;
+
+  if (isNewMeeting) {
+    // Generate new session ID for this meeting
+    meetingSessionId = generateSessionId();
+    currentMeetingType = meetingIdentifier;
+
+    console.log(`NEW meeting detected: ${meetingType} (Session: ${meetingSessionId})`);
+
+    // Send message to background script
     chrome.runtime.sendMessage({
       action: 'meetingDetected',
       meetingType: meetingType,
+      sessionId: meetingSessionId,
       url: window.location.href
     });
 
-    hasNotified = true; // Mark as notified
     return true;
+  } else {
+    console.log('Same meeting session, skipping notification');
+    return false;
   }
-  return false;
 }
 
 // Initial check after page load
 setTimeout(() => {
   console.log('Running initial meeting detection check...');
   checkAndNotify();
-}, 3000); // Increased delay for Teams
+}, 3000);
 
-// Monitor for dynamic loading (SPAs) - CONTINUOUS checking
+// Continuous monitoring for dynamic loading
 let checkInterval = setInterval(() => {
-  if (checkAndNotify()) {
-    // For Teams, keep checking even after detection
-    // because UI might appear gradually
-    console.log('Meeting detected, but continuing to monitor...');
-  }
-}, 2000); // Check every 2 seconds
+  checkAndNotify();
+}, 2000);
 
-// Stop checking after 60 seconds (increased for Teams)
+// Stop checking after 60 seconds
 setTimeout(() => {
   clearInterval(checkInterval);
   console.log('Stopped continuous meeting detection');
 }, 60000);
 
-// Listen for URL changes (for SPAs like Teams/Meet)
+// Listen for URL changes (for SPAs)
 let lastUrl = location.href;
 let lastHash = location.hash;
 new MutationObserver(() => {
@@ -151,21 +195,17 @@ new MutationObserver(() => {
   if (currentUrl !== lastUrl || currentHash !== lastHash) {
     lastUrl = currentUrl;
     lastHash = currentHash;
-    console.log('URL or hash changed, rechecking for meeting...', currentUrl, currentHash);
+    console.log('URL/hash changed, rechecking:', currentUrl);
 
-    // Reset notification flag to allow re-detection
-    hasNotified = false;
-
-    // Immediate check
+    // Always check on URL change (will auto-detect if it's new or same meeting)
     setTimeout(() => checkAndNotify(), 1000);
   }
 }).observe(document, { subtree: true, childList: true });
 
-// Also listen for hash changes explicitly
+// Hash change listener
 window.addEventListener('hashchange', () => {
-  console.log('Hash changed event fired:', location.hash);
-  hasNotified = false;
+  console.log('Hash changed event:', location.hash);
   setTimeout(() => checkAndNotify(), 1000);
 });
 
-console.log('Teams meeting detection content script loaded - aggressive mode');
+console.log('Meeting detection content script loaded');

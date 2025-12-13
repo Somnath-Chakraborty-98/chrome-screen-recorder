@@ -13,6 +13,31 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
 });
 
+// Inject content script into Zoom tabs when they load
+chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+    if (changeInfo.status === 'complete' && tab.url && tab.url.includes('zoom.us')) {
+        console.log('Zoom tab detected:', tab.url);
+
+        // Check if script is already injected
+        chrome.scripting.executeScript({
+            target: { tabId: tabId },
+            func: () => window.meetingDetectionLoaded
+        }).then(results => {
+            if (!results || !results[0] || !results[0].result) {
+                // Script not loaded, inject it
+                chrome.scripting.executeScript({
+                    target: { tabId: tabId },
+                    files: ['src/application/content/content.js']
+                }).then(() => {
+                    console.log('Content script injected into Zoom');
+                }).catch(err => {
+                    console.error('Injection failed:', err);
+                });
+            }
+        });
+    }
+});
+
 function openRecorderWindow(meetingType) {
     // Check if recorder window is already open
     if (recorderWindowId) {
