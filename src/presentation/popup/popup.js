@@ -430,7 +430,7 @@ function handleRecorderStop() {
 
         // Open preview page in new tab
         chrome.tabs.create({
-          url: chrome.runtime.getURL('preview.html')
+          url: chrome.runtime.getURL('src/presentation/preview/preview.html')
         }, function (tab) {
           console.log('Preview tab opened:', tab.id);
         });
@@ -827,7 +827,7 @@ startBtn.addEventListener('click', async () => {
     try {
       // Create persistent popup window with max size
       chrome.windows.create({
-        url: chrome.runtime.getURL('popup.html?mode=window&autostart=1'),
+        url: chrome.runtime.getURL('src/presentation/popup/popup.html?mode=window&autostart=1'),
         type: 'popup',
         width: 640,
         height: 600,

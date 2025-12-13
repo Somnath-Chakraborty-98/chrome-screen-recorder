@@ -6,7 +6,8 @@ export default defineConfig({
     rollupOptions: {
       // specify all HTML entry points you want Vite to copy/build
       input: {
-        popup: resolve(__dirname, 'popup.html'),
+        popup: resolve(__dirname, 'src/presentation/popup/popup.html'),
+        preview: resolve(__dirname, "src/presentation/preview/preview.html")
         // options: resolve(__dirname, 'options.html'),
         // background: resolve(__dirname, 'background.html'),
       }

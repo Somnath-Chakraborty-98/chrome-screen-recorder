@@ -33,7 +33,7 @@ function openRecorderWindow(meetingType) {
 
 function createRecorderWindow(meetingType) {
     chrome.windows.create({
-        url: chrome.runtime.getURL('popup.html?mode=window&meeting=' + meetingType),
+        url: chrome.runtime.getURL('src/presentation/popup/popup.html?mode=window&meeting=' + meetingType),
         type: 'popup',
         width: 640,
         height: 600,

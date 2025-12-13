@@ -165,7 +165,7 @@ newRecordingBtn.addEventListener('click', () => {
     try {
         // Open recorder window
         chrome.windows.create({
-            url: chrome.runtime.getURL('popup.html?mode=window'),
+            url: chrome.runtime.getURL('src/presentation/popup/popup.html?mode=window'),
             type: 'popup',
             width: 640,
             height: 600
