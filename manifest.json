@@ -17,7 +17,9 @@
     "https://meet.google.com/*",
     "https://*.zoom.us/*",
     "https://teams.microsoft.com/*",
-    "https://*.teams.microsoft.com/*"
+    "https://*.teams.microsoft.com/*",
+    "https://teams.live.com/*",
+    "https://*.teams.live.com/*"
   ],
   "content_scripts": [
     {
@@ -25,7 +27,9 @@
         "https://meet.google.com/*",
         "https://*.zoom.us/*",
         "https://teams.microsoft.com/*",
-        "https://*.teams.microsoft.com/*"
+        "https://*.teams.microsoft.com/*",
+        "https://teams.live.com/*",
+        "https://*.teams.live.com/*"
       ],
       "js": ["src/application/content/content.js"],
       "run_at": "document_end"

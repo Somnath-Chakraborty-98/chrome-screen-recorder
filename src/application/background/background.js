@@ -39,8 +39,7 @@ function createRecorderWindow(meetingType) {
         height: 600,
         focused: true,
         top: 100,
-        left: 100,
-        setSelfAsOpener: true
+        left: 100
     }, (window) => {
         if (window) {
             recorderWindowId = window.id;
