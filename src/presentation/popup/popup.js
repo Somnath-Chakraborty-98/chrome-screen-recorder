@@ -1,6 +1,70 @@
+import { GUEST_ENTITLEMENTS } from '../../infrastructure/entitlements/entitlements-service.js';
+import { normalizePlaybackMime } from '../../domain/recording/blob-utils.js';
+import { prepareRecordingBlob } from '../../domain/recording/webm-duration-fix.js';
+import { resolveRecordingConfig } from '../../domain/recording/recorder-config.js';
+import { calculateMeetingCost, persistMeetingCostSession } from '../../domain/meeting-cost/calculator.js';
+import { PREVIEW_URL } from '../../infrastructure/extension-paths.js';
+import { saveRecording } from '../../infrastructure/recording/recording-store.js';
+import { initAccountBar } from './account-bar.js';
+import { initRecordingSetupCollapse, renderRecordingOptions, readRecordingOptions } from './recording-options.js';
+
 // ============================================================
 // SCREEN RECORDER - Main Controller
 // ============================================================
+
+/** @type {import('../../infrastructure/entitlements/entitlements-service.js').Entitlements} */
+let activeEntitlements = { ...GUEST_ENTITLEMENTS };
+
+let recordingStartedAt = null;
+let recordingTimerId = null;
+let recordingElapsedSeconds = 0;
+let recordingPausedAt = null;
+let accumulatedPauseMs = 0;
+/** @type {{ mimeType: string, format: string, quality: string, fileExtension: string }|null} */
+let activeRecordingConfig = null;
+/** @type {{ enabled: boolean, hourlyRate: number }|null} */
+let activeMeetingCost = null;
+const pauseBtn = document.getElementById('pauseBtn');
+const recordingTimerEl = document.getElementById('recordingTimer');
+const recordingLimitEl = document.getElementById('recordingLimit');
+
+// Block MP4 selection when disabled (Free / guest)
+document.getElementById('formatMp4')?.addEventListener('click', (event) => {
+  const mp4 = document.getElementById('formatMp4');
+  const webm = document.getElementById('formatWebm');
+  if (mp4?.disabled) {
+    event.preventDefault();
+    if (webm) webm.checked = true;
+    mp4.checked = false;
+  }
+});
+document.getElementById('formatMp4Label')?.addEventListener('click', (event) => {
+  const mp4 = document.getElementById('formatMp4');
+  if (mp4?.disabled) {
+    event.preventDefault();
+    event.stopPropagation();
+  }
+});
+
+renderRecordingOptions(activeEntitlements);
+initRecordingSetupCollapse();
+if (recordingLimitEl) {
+  recordingLimitEl.textContent = `/ ${activeEntitlements.durationMinutes}:00 max`;
+}
+
+initAccountBar()
+  .then((entitlements) => {
+    activeEntitlements = entitlements;
+    renderRecordingOptions(entitlements);
+    if (recordingLimitEl) {
+      recordingLimitEl.textContent = `/ ${entitlements.durationMinutes}:00 max`;
+    }
+    console.log('Active entitlements:', entitlements);
+  })
+  .catch((error) => {
+    console.warn('Account bar init failed:', error);
+    renderRecordingOptions(activeEntitlements);
+  });
 // This script manages screen recording with audio mixing
 // capabilities for Chrome extension popup/window interface.
 // ============================================================
@@ -156,35 +220,69 @@ function isPersistentWindow() {
 }
 
 // ============================================================
-// MEDIA RECORDER CONFIGURATION
+// RECORDING TIMER, PAUSE, DURATION LIMIT
 // ============================================================
 
-/**
- * Detects the best supported MIME type for MediaRecorder
- * Tries VP9/VP8 with Opus audio in order of preference
- * @returns {string} Supported MIME type or empty string
- */
-function getSupportedMimeType() {
-  const candidates = [
-    'video/webm;codecs=vp9,opus',  // Best quality
-    'video/webm;codecs=vp8,opus',  // Good compatibility
-    'video/webm;codecs=vp9',       // Video only VP9
-    'video/webm'                    // Fallback
-  ];
+function formatTimer(seconds) {
+  const mins = Math.floor(seconds / 60);
+  const secs = seconds % 60;
+  return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+}
 
-  for (const mimeType of candidates) {
-    try {
-      if (MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(mimeType)) {
-        console.log('Using MIME type:', mimeType);
-        return mimeType;
-      }
-    } catch (e) {
-      console.warn('Error checking MIME type:', mimeType, e);
+function resetRecordingTimerUi() {
+  recordingElapsedSeconds = 0;
+  recordingStartedAt = null;
+  recordingPausedAt = null;
+  accumulatedPauseMs = 0;
+  if (recordingTimerId) {
+    clearInterval(recordingTimerId);
+    recordingTimerId = null;
+  }
+  if (recordingTimerEl) recordingTimerEl.textContent = '00:00';
+  if (pauseBtn) {
+    pauseBtn.disabled = true;
+    pauseBtn.textContent = 'Pause';
+  }
+}
+
+function startRecordingTimer() {
+  recordingStartedAt = Date.now();
+  recordingElapsedSeconds = 0;
+  const maxSeconds = activeEntitlements.durationMinutes * 60;
+
+  recordingTimerId = setInterval(() => {
+    if (recordingPausedAt) return;
+
+    const now = Date.now();
+    const elapsed = Math.floor((now - recordingStartedAt - accumulatedPauseMs) / 1000);
+    recordingElapsedSeconds = elapsed;
+    if (recordingTimerEl) recordingTimerEl.textContent = formatTimer(elapsed);
+
+    if (elapsed >= maxSeconds) {
+      logStatus('Duration limit reached — stopping recording.');
+      stopRecordingFlow();
     }
+  }, 250);
+}
+
+function togglePauseRecording() {
+  if (!recorder || recorder.state === 'inactive') return;
+
+  if (recorder.state === 'recording') {
+    recorder.pause();
+    recordingPausedAt = Date.now();
+    pauseBtn.textContent = 'Resume';
+    logStatus('Recording paused.');
+    return;
   }
 
-  console.warn('No preferred MIME types supported, using default');
-  return '';
+  if (recorder.state === 'paused') {
+    recorder.resume();
+    accumulatedPauseMs += Date.now() - recordingPausedAt;
+    recordingPausedAt = null;
+    pauseBtn.textContent = 'Pause';
+    logStatus('Recording resumed.');
+  }
 }
 
 // ============================================================
@@ -401,57 +499,116 @@ function restoreExtensionWindow() {
  * Handles cleanup when recording stops
  * Opens preview page instead of auto-downloading
  */
-function handleRecorderStop() {
+async function handleRecorderStop() {
   console.log('Recorder stopped, opening preview...');
+  const capturedElapsedSeconds = recordingElapsedSeconds;
+  const capturedStartedAt = recordingStartedAt;
+  const capturedAccumulatedPauseMs = accumulatedPauseMs;
+  resetRecordingTimerUi();
+
+  const mimeType = normalizePlaybackMime(
+    activeRecordingConfig?.mimeType || recorder?.mimeType || 'video/webm'
+  );
+  const endedAt = Date.now();
+  const durationSeconds = capturedStartedAt
+    ? Math.max(
+        1,
+        Math.round((endedAt - capturedStartedAt - capturedAccumulatedPauseMs) / 1000)
+      )
+    : Math.max(1, capturedElapsedSeconds || 1);
+
+  let meetingCostMeta = null;
+  if (activeMeetingCost?.enabled && activeMeetingCost.hourlyRate > 0) {
+    const calculatedCost = calculateMeetingCost(activeMeetingCost.hourlyRate, durationSeconds);
+    meetingCostMeta = {
+      hourlyRate: activeMeetingCost.hourlyRate,
+      durationSeconds,
+      calculatedCost,
+      startedAt: capturedStartedAt || endedAt - durationSeconds * 1000,
+      endedAt
+    };
+    persistMeetingCostSession({
+      ...meetingCostMeta,
+      sessionTitle: 'Screen recording'
+    }).catch((e) => console.warn('Meeting cost save failed:', e));
+  }
 
   try {
-    // Create blob from all recorded chunks
-    const blob = new Blob(recordedChunks, { type: 'video/webm' });
-    console.log('Recording blob created, size:', blob.size, 'bytes');
+    if (!recordedChunks.length) {
+      logStatus('Recording failed: no video data captured. Try again.');
+      return;
+    }
 
-    // Convert blob to data URL for transfer
-    const reader = new FileReader();
-    reader.onloadend = function () {
-      const dataUrl = reader.result;
-      console.log('Data URL created, length:', dataUrl.length);
+    const rawBlob = new Blob(recordedChunks, {
+      type: activeRecordingConfig?.mimeType || mimeType
+    });
 
-      // Store in chrome.storage.local (works across extension pages)
-      chrome.storage.local.set({
-        recordingData: dataUrl,
-        recordingTimestamp: Date.now()
-      }, function () {
-        if (chrome.runtime.lastError) {
-          console.error('Error storing recording:', chrome.runtime.lastError);
-          fallbackDownload(blob);
-          return;
-        }
+    const prepared = await prepareRecordingBlob(rawBlob, mimeType, durationSeconds);
+    const blob = prepared.blob;
+    const savedDurationSeconds = prepared.durationSeconds;
+    console.log(
+      'Recording blob created, size:',
+      blob.size,
+      'bytes',
+      'duration:',
+      savedDurationSeconds,
+      's'
+    );
 
-        console.log('Recording data stored successfully');
+    if (blob.size === 0) {
+      logStatus('Recording failed: empty file. Try WebM format and record again.');
+      return;
+    }
 
-        // Open preview page in new tab
-        chrome.tabs.create({
-          url: chrome.runtime.getURL('src/presentation/preview/preview.html')
-        }, function (tab) {
-          console.log('Preview tab opened:', tab.id);
-        });
-      });
+    const recordingMeta = {
+      mimeType,
+      format: activeRecordingConfig?.format || 'webm',
+      quality: activeRecordingConfig?.quality || 'low',
+      fileExtension: activeRecordingConfig?.fileExtension || 'webm',
+      durationSeconds: savedDurationSeconds,
+      watermarkRequired: activeEntitlements.watermarkEnabled,
+      entitlements: {
+        planCode: activeEntitlements.planCode,
+        customFilenameEnabled: activeEntitlements.customFilenameEnabled,
+        maxQuality: activeEntitlements.maxQuality,
+        mp4Enabled: activeEntitlements.mp4Enabled
+      },
+      meetingCost: meetingCostMeta
     };
 
-    reader.onerror = function (error) {
-      console.error('Error reading blob:', error);
-      fallbackDownload(blob);
-    };
+    const recordingId = await saveRecording(blob, recordingMeta);
 
-    reader.readAsDataURL(blob);
+    await chrome.storage.local.set({
+      recordingId,
+      recordingTimestamp: Date.now(),
+      recordingMeta
+    });
 
+    chrome.storage.local.remove(['recordingData']);
+
+    console.log('Recording saved to IndexedDB:', recordingId);
+
+    chrome.tabs.create({ url: PREVIEW_URL }, (tab) => {
+      console.log('Preview tab opened:', tab?.id);
+    });
   } catch (e) {
     console.error('Error processing recording:', e);
-    alert('Recording finished but failed to create preview: ' + e);
+    if (recordedChunks.length) {
+      try {
+        const fallbackBlob = new Blob(recordedChunks, {
+          type: activeRecordingConfig?.mimeType || 'video/webm'
+        });
+        fallbackDownload(fallbackBlob);
+      } catch {
+        alert('Recording finished but failed to save: ' + e);
+      }
+    } else {
+      logStatus('Recording failed to save. Please try again.');
+    }
   } finally {
-    // Cleanup all resources
     cleanupRecordingResources();
-
-    // Reset UI state
+    activeRecordingConfig = null;
+    activeMeetingCost = null;
     logStatus('Recording complete! Preview opened in new tab.');
     startBtn.disabled = false;
     stopBtn.disabled = true;
@@ -673,13 +830,23 @@ async function startRecordingFlow() {
   // ========================================
   console.log('Creating MediaRecorder...');
 
-  const mimeType = getSupportedMimeType();
-  try {
-    recorder = mimeType
-      ? new MediaRecorder(combinedStream, { mimeType: mimeType })
-      : new MediaRecorder(combinedStream);
+  const options = readRecordingOptions(activeEntitlements);
+  activeMeetingCost = options.meetingCost;
+  activeRecordingConfig = resolveRecordingConfig(
+    options.format,
+    options.quality,
+    activeEntitlements
+  );
 
-    console.log('MediaRecorder created');
+  if (options.format === 'mp4' && activeRecordingConfig.format !== 'mp4') {
+    logStatus('MP4 not supported here — recording as WebM.');
+  }
+
+  const { recorderOptions } = activeRecordingConfig;
+  try {
+    recorder = new MediaRecorder(combinedStream, recorderOptions);
+    activeRecordingConfig.mimeType = recorder.mimeType || activeRecordingConfig.mimeType;
+    console.log('MediaRecorder created with', recorder.mimeType, recorderOptions);
   } catch (err) {
     console.error('MediaRecorder creation failed:', err);
     logStatus('Recording failed: ' + (err && err.message ? err.message : err));
@@ -708,8 +875,10 @@ async function startRecordingFlow() {
     }
   };
 
-  // Handle recording stop
-  recorder.onstop = handleRecorderStop;
+  recorder.onstop = () => {
+    // Allow final dataavailable chunk to arrive before building the blob
+    setTimeout(() => handleRecorderStop(), 1500);
+  };
 
   // Handle recorder errors
   recorder.onerror = (event) => {
@@ -723,7 +892,8 @@ async function startRecordingFlow() {
   console.log('Starting MediaRecorder...');
 
   try {
-    recorder.start();  // Start recording (collects all data until stop)
+    // 1-second timeslice keeps WebM clusters small so Chrome can seek the full file.
+    recorder.start(1000);
     console.log('Recording started successfully');
   } catch (err) {
     console.error('recorder.start() failed:', err);
@@ -740,10 +910,11 @@ async function startRecordingFlow() {
     return;
   }
 
-  // Update UI for active recording
   startBtn.disabled = true;
   stopBtn.disabled = false;
-  logStatus('Recording... Click Stop to finish.');
+  if (pauseBtn) pauseBtn.disabled = false;
+  startRecordingTimer();
+  logStatus(`Recording (${activeRecordingConfig.quality} · ${activeRecordingConfig.format.toUpperCase()})…`);
   console.log('Recording flow complete - now recording');
 }
 
@@ -761,17 +932,19 @@ function stopRecordingFlow() {
   if (recorder && recorder.state !== 'inactive') {
     logStatus('Stopping...');
     try {
-      recorder.stop();  // Triggers handleRecorderStop callback
+      if (typeof recorder.requestData === 'function') {
+        recorder.requestData();
+      }
+      recorder.stop();
       console.log('Recorder stopped');
     } catch (e) {
       console.warn('Error stopping recorder:', e);
     }
   } else {
-    // Recorder already stopped or never started - manual cleanup
     console.log('Recorder not active, performing manual cleanup');
+    resetRecordingTimerUi();
     cleanupRecordingResources();
 
-    // Reset UI
     logStatus('Stopped.');
     startBtn.disabled = false;
     stopBtn.disabled = true;
@@ -827,7 +1000,7 @@ startBtn.addEventListener('click', async () => {
     try {
       // Create persistent popup window with max size
       chrome.windows.create({
-        url: chrome.runtime.getURL('src/presentation/popup/popup.html?mode=window&autostart=1'),
+        url: chrome.runtime.getURL('dist/src/presentation/popup/popup.html?mode=window&autostart=1'),
         type: 'popup',
         width: 640,
         height: 600,
@@ -854,6 +1027,10 @@ startBtn.addEventListener('click', async () => {
 stopBtn.addEventListener('click', () => {
   console.log('Stop button clicked');
   stopRecordingFlow();
+});
+
+pauseBtn?.addEventListener('click', () => {
+  togglePauseRecording();
 });
 
 // ============================================================

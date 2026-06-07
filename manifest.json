@@ -1,11 +1,11 @@
 {
   "manifest_version": 3,
-  "name": "Screen Recorder with Audio (Mic-first)",
-  "description": "Chrome extension to record screen and audio",
-  "version": "1.1.0",
+  "name": "RecordEasy — Screen Recorder",
+  "description": "Record screen and audio with plan-based quality, MP4, and meeting tools. Run npm run build before loading.",
+  "version": "1.2.2",
   "action": {
-    "default_popup": "src/presentation/popup/popup.html",
-    "default_title": "Screen Recorder"
+    "default_popup": "dist/src/presentation/popup/popup.html",
+    "default_title": "RecordEasy"
   },
   "permissions": [
     "tabCapture",
@@ -14,6 +14,7 @@
     "storage"
   ],
   "host_permissions": [
+    "https://guiupuhxcdoehxulaygv.supabase.co/*",
     "https://meet.google.com/*",
     "https://*.zoom.us/*",
     "https://zoom.us/*",
@@ -33,16 +34,16 @@
         "https://teams.live.com/*",
         "https://*.teams.live.com/*"
       ],
-      "js": ["src/application/content/content.js"],
+      "js": ["dist/src/application/content/content.js"],
       "run_at": "document_end"
     }
   ],
   "background": {
-    "service_worker": "src/application/background/background.js"
+    "service_worker": "dist/src/application/background/background.js"
   },
   "icons": {
-    "16": "icons/icon16.png",
-    "48": "icons/icon48.png",
-    "128": "icons/icon128.png"
+    "16": "dist/icons/icon16.png",
+    "48": "dist/icons/icon48.png",
+    "128": "dist/icons/icon128.png"
   }
 }

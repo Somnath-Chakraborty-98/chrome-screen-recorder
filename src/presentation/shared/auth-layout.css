@@ -1,0 +1,137 @@
+.auth-page,
+.pricing-page {
+  width: 400px;
+  min-height: 100vh;
+  margin: 0 auto;
+  padding: 28px 20px 24px;
+}
+
+.auth-header,
+.pricing-header {
+  margin-bottom: 20px;
+}
+
+.auth-header h1,
+.pricing-header h1 {
+  margin: 0 0 6px;
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.auth-header p,
+.pricing-subtitle {
+  margin: 0;
+  color: var(--re-text-muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.auth-card {
+  padding: 20px;
+}
+
+.auth-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.auth-form.hidden {
+  display: none;
+}
+
+.auth-submit {
+  width: 100%;
+  margin-top: 4px;
+  padding: 11px 14px;
+  font-size: 14px;
+}
+
+.auth-alt-actions {
+  display: flex;
+  justify-content: center;
+  gap: 16px;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--re-border);
+}
+
+.auth-alt-btn {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--re-primary);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.auth-alt-btn:hover {
+  color: var(--re-primary-hover);
+}
+
+.auth-back-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 12px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--re-text-muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.auth-back-link:hover {
+  color: var(--re-text);
+}
+
+.auth-hint {
+  margin: 0;
+  font-size: 11px;
+  color: var(--re-text-muted);
+  line-height: 1.4;
+}
+
+.early-banner {
+  margin-top: 14px;
+  padding: 12px;
+  border-radius: var(--re-radius);
+  background: #ecfdf5;
+  border: 1px solid #a7f3d0;
+  color: #065f46;
+  font-size: 13px;
+}
+
+[data-theme='dark'] .early-banner {
+  background: #064e3b;
+  border-color: #065f46;
+  color: #a7f3d0;
+}
+
+.auth-footer,
+.pricing-footer {
+  display: flex;
+  gap: 8px;
+  margin-top: 18px;
+}
+
+.auth-footer .re-btn,
+.pricing-footer .re-btn {
+  flex: 1;
+}
+
+.pricing-note {
+  margin-top: 16px;
+  font-size: 11px;
+  color: var(--re-text-muted);
+  line-height: 1.5;
+}
+
+.hidden {
+  display: none !important;
+}

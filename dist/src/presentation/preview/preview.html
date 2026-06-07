@@ -1,57 +1,171 @@
 <!DOCTYPE html>
-<html>
+
+<html lang="en">
+
 <head>
+
   <meta charset="utf-8" />
-  <title>Recording Preview - Screen Recorder</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <link rel="stylesheet" crossorigin href="/assets/preview-CGvXhF3v.css">
+
+  <title>RecordEasy — Download</title>
+
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+
+
+  <script type="module" crossorigin src="../../../assets/preview-BLM27GaO.js"></script>
+  <link rel="modulepreload" crossorigin href="../../../assets/theme-BUWu_9nB.js">
+  <link rel="modulepreload" crossorigin href="../../../assets/entitlements-service-BUTGOh_Z.js">
+  <link rel="modulepreload" crossorigin href="../../../assets/recording-store-DNdTrSoS.js">
+  <link rel="stylesheet" crossorigin href="../../../assets/theme-Yp7Qf_k_.css">
+  <link rel="stylesheet" crossorigin href="../../../assets/preview-CPd86P8Q.css">
 </head>
+
 <body>
+
   <div class="container">
-    <!-- Header -->
+
     <header class="header">
-      <h1>📹 Recording Complete</h1>
-      <p class="subtitle">Review your recording before downloading</p>
+
+      <div class="header-top">
+
+        <div>
+
+          <h1>Recording complete</h1>
+
+          <p class="subtitle">Review, choose export options, and download</p>
+
+        </div>
+
+      </div>
+
+      <div id="planBadge" class="plan-badge-row"></div>
+
     </header>
 
-    <!-- Video Player -->
-    <div class="video-container">
-      <video id="recordedVideo" controls></video>
+
+
+    <div class="video-container is-loading">
+      <video id="recordedVideo" controls preload="auto" playsinline></video>
+      <div id="videoLoading" class="video-loading">Loading recording…</div>
+      <div id="watermarkOverlay" class="watermark-overlay hidden">RecordEasy</div>
     </div>
 
-    <!-- Recording Info -->
+
+
     <div class="info-bar">
+
       <div class="info-item">
-        <span class="label">Duration:</span>
+
+        <span class="label">Duration</span>
+
         <span id="duration" class="value">--:--</span>
+
       </div>
+
       <div class="info-item">
-        <span class="label">Size:</span>
+
+        <span class="label">Size</span>
+
         <span id="fileSize" class="value">-- MB</span>
+
       </div>
+
       <div class="info-item">
-        <span class="label">Format:</span>
-        <span class="value">WebM</span>
+
+        <span class="label">Recorded</span>
+
+        <span id="recordedFormat" class="value">WebM</span>
+
       </div>
+
     </div>
 
-    <!-- Action Buttons -->
+
+
+    <section class="export-section re-card">
+
+      <h2 class="section-title">Export options</h2>
+
+
+
+      <div class="export-grid">
+
+        <div class="export-group">
+
+          <span class="export-group-label">Quality</span>
+
+          <div id="qualityOptions" class="option-list"></div>
+
+        </div>
+
+
+
+        <div class="export-group">
+
+          <span class="export-group-label">Format</span>
+
+          <div id="formatOptions" class="option-list"></div>
+
+        </div>
+
+      </div>
+
+
+
+      <div class="filename-block">
+
+        <label class="re-label" for="filenameInput">File name</label>
+
+        <div class="filename-row">
+
+          <input id="filenameInput" class="re-input" type="text" />
+
+          <button id="copyFilenameBtn" class="re-btn" type="button" title="Copy file name">📋</button>
+
+          <a id="filenameLock" class="option-lock hidden" href="#" target="_blank" title="Plus/Pro feature">🔒</a>
+
+        </div>
+
+        <p id="filenameHint" class="option-hint"></p>
+
+      </div>
+
+
+
+      <div id="meetingCostSummary" class="meeting-cost-summary hidden"></div>
+
+    </section>
+
+
+
     <div class="actions">
-      <button id="downloadBtn" class="btn btn-primary">
-        💾 Download Recording
-      </button>
-      <button id="discardBtn" class="btn btn-danger">
-        🗑️ Discard
-      </button>
-      <button id="newRecordingBtn" class="btn btn-secondary">
-        🔴 New Recording
-      </button>
+
+      <button id="downloadBtn" class="btn btn-primary">Download &amp; close</button>
+
+      <button id="discardBtn" class="btn btn-danger">Discard</button>
+
+      <button id="newRecordingBtn" class="btn btn-secondary">New recording</button>
+
     </div>
 
-    <!-- Status Message -->
+
+
     <div id="statusMessage" class="status-message hidden"></div>
+
+    <div id="exportProgress" class="export-progress hidden">
+
+      <div class="export-progress-bar"><div id="exportProgressFill"></div></div>
+
+      <span id="exportProgressText">Preparing export…</span>
+
+    </div>
+
   </div>
 
-  <script src="preview.js"></script>
+
+
+
 </body>
+
 </html>
+

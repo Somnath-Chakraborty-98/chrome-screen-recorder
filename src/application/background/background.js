@@ -27,7 +27,7 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
                 // Script not loaded, inject it
                 chrome.scripting.executeScript({
                     target: { tabId: tabId },
-                    files: ['src/application/content/content.js']
+                    files: ['dist/src/application/content/content.js']
                 }).then(() => {
                     console.log('Content script injected into Zoom');
                 }).catch(err => {
@@ -58,7 +58,7 @@ function openRecorderWindow(meetingType) {
 
 function createRecorderWindow(meetingType) {
     chrome.windows.create({
-        url: chrome.runtime.getURL('src/presentation/popup/popup.html?mode=window&meeting=' + meetingType),
+        url: chrome.runtime.getURL('dist/src/presentation/popup/popup.html?mode=window&meeting=' + meetingType),
         type: 'popup',
         width: 640,
         height: 600,

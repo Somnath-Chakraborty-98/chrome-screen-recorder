@@ -13,16 +13,56 @@
 }
 
 body {
-  font-family: 'Segoe UI', Arial, Helvetica, sans-serif;
+  font-family: var(--re-font, 'Segoe UI', Arial, Helvetica, sans-serif);
   margin: 0;
   padding: 12px;
   width: 450px;
   min-width: 450px;
   max-width: 720px;
   max-height: 680;
-  background: #ffffff;
-  color: #333;
+  background: var(--re-bg, #ffffff);
+  color: var(--re-text, #333);
   line-height: 1.5;
+}
+
+.account-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 12px;
+  padding: 10px;
+  border: 1px solid var(--re-border, #e5e7eb);
+  border-radius: 8px;
+  background: var(--re-surface, #fff);
+}
+
+.account-info {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.account-email {
+  font-size: 11px;
+  color: var(--re-text-muted, #6b7280);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 140px;
+}
+
+.account-actions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.account-btn {
+  padding: 6px 10px;
+  font-size: 11px;
 }
 
 /* ============================================================
@@ -30,9 +70,144 @@ body {
    ============================================================ */
 
 header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
   margin-bottom: 12px;
   border-bottom: 2px solid #4285f4;
   padding-bottom: 8px;
+}
+
+.duration-badge {
+  flex-shrink: 0;
+}
+
+.section-title {
+  margin: 0 0 10px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--re-text-muted, #6b7280);
+}
+
+.record-options {
+  padding: 0;
+  margin-bottom: 12px;
+  overflow: hidden;
+}
+
+.section-collapse-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 12px;
+  border: none;
+  background: transparent;
+  color: var(--re-text);
+  cursor: pointer;
+  text-align: left;
+}
+
+.section-collapse-toggle .section-title {
+  margin: 0;
+}
+
+.collapse-icon {
+  font-size: 12px;
+  color: var(--re-text-muted, #6b7280);
+}
+
+.section-body {
+  padding: 0 12px 12px;
+}
+
+.format-fieldset,
+.meeting-cost-section {
+  margin-top: 10px;
+  border: none;
+  padding: 0;
+}
+
+.format-fieldset legend,
+.radio-label {
+  font-size: 13px;
+}
+
+.format-options-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.radio-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 6px 0;
+}
+
+.hourly-rate-block {
+  margin-top: 8px;
+}
+
+.setup-signin-hint {
+  margin: 6px 0 0;
+  font-size: 10px;
+  color: var(--re-text-muted, #6b7280);
+  text-align: left;
+}
+
+.setup-signin-hint a {
+  color: var(--re-text-muted, #6b7280);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.setup-signin-hint a:hover {
+  color: var(--re-primary, #2563eb);
+}
+
+.option-lock {
+  text-decoration: none;
+  font-size: 12px;
+}
+
+.format-locked {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+.format-locked input[type='radio'] {
+  pointer-events: none;
+}
+
+.meeting-cost-section.disabled {
+  opacity: 0.7;
+}
+
+.timer-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 8px 0;
+  font-size: 13px;
+}
+
+.recording-timer {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.recording-limit {
+  color: var(--re-text-muted, #6b7280);
+  font-size: 12px;
+}
+
+.controls {
+  display: flex;
+  gap: 8px;
 }
 
 h3 {
@@ -96,6 +271,7 @@ h3 {
   margin-bottom: 8px;
   font-size: 14px;
   cursor: pointer;
+  -webkit-user-select: none;
   user-select: none;
 }
 
