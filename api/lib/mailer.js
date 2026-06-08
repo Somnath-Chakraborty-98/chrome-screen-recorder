@@ -24,7 +24,33 @@ function getTransporter() {
   return transporter;
 }
 
+function resolveFromAddress() {
+  const user = process.env.SMTP_USER?.trim();
+  const from = process.env.SMTP_FROM?.trim();
+
+  if (!user) {
+    throw new Error('SMTP_USER is not configured.');
+  }
+
+  if (!from) return user;
+
+  // Already a full RFC address, e.g. RecordEasy <admin@metrivance.com>
+  if (from.includes('@') && from.includes('<')) return from;
+
+  // Bare email only
+  if (from.includes('@')) return from;
+
+  // Display name without email — Zoho requires the authenticated mailbox
+  const label = from.replace(/"/g, '');
+  return `"${label}" <${user}>`;
+}
+
 export async function sendMail({ to, subject, html, text }) {
-  const from = process.env.SMTP_FROM || process.env.SMTP_USER;
-  await getTransporter().sendMail({ from, to, subject, html, text });
+  await getTransporter().sendMail({
+    from: resolveFromAddress(),
+    to,
+    subject,
+    html,
+    text
+  });
 }
