@@ -1,0 +1,8 @@
+dist
+src/presentation
+src/domain
+icons
+scripts
+supabase
+*.md
+EXTENSION_LOAD_INSTRUCTIONS.txt

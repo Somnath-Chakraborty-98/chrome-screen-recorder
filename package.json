@@ -6,7 +6,8 @@
   "main": "index.js",
   "scripts": {
     "dev": "vite",
-    "build": "vite build && node scripts/copy-extension-assets.cjs"
+    "build": "vite build && node scripts/copy-extension-assets.cjs",
+    "vercel-build": "node -e \"console.log('Vercel: API-only deploy (extension builds locally)')\""
   },
   "keywords": [],
   "author": "",
