@@ -23,6 +23,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   if (message.action === 'recordingStopping') {
     previewOpenedForSession = false;
+    // Restore the minimized popup so its JS can run and save the recording.
+    // Once saved it sends recordingFinished; storage watcher is the fallback.
+    restoreRecorderWindow();
     watchForRecordingComplete(message.since || Date.now() - 5000);
     return;
   }
@@ -34,6 +37,19 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 });
+
+function restoreRecorderWindow() {
+  if (!recorderWindowId) return;
+  chrome.windows.update(
+    recorderWindowId,
+    { state: 'normal', focused: true },
+    () => {
+      if (chrome.runtime.lastError) {
+        console.warn('Could not restore recorder window:', chrome.runtime.lastError);
+      }
+    }
+  );
+}
 
 function stopRecordingWatch() {
   if (recordingStopWatchId) {
