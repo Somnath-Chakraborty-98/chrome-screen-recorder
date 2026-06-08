@@ -1,4 +1,4 @@
-import { getCurrentUser, signOut } from '../../infrastructure/auth/auth-service.js';
+import { getCurrentUser, restoreAuthSession, signOut } from '../../infrastructure/auth/auth-service.js';
 import { fetchEntitlements } from '../../infrastructure/entitlements/entitlements-service.js';
 import { initTheme } from '../shared/theme.js';
 import { LOGIN_URL, PRICING_URL } from '../shared/urls.js';
@@ -8,6 +8,7 @@ import { LOGIN_URL, PRICING_URL } from '../shared/urls.js';
  */
 export async function initAccountBar() {
   await initTheme();
+  await restoreAuthSession();
 
   const bar = document.getElementById('accountBar');
   if (!bar) return;

@@ -15,6 +15,7 @@
   ],
   "host_permissions": [
     "https://guiupuhxcdoehxulaygv.supabase.co/*",
+    "https://recordeasy.metrivance.com/*",
     "https://meet.google.com/*",
     "https://*.zoom.us/*",
     "https://zoom.us/*",

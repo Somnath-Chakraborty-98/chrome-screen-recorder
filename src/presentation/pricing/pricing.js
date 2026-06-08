@@ -1,4 +1,4 @@
-import { getCurrentUser } from '../../infrastructure/auth/auth-service.js';
+import { getCurrentUser, restoreAuthSession } from '../../infrastructure/auth/auth-service.js';
 import { fetchEntitlements, fetchPlans } from '../../infrastructure/entitlements/entitlements-service.js';
 import { initTheme } from '../shared/theme.js';
 import { LOGIN_URL } from '../shared/urls.js';
@@ -60,6 +60,7 @@ init();
 
 async function init() {
   try {
+    await restoreAuthSession();
     const [user, entitlements, plans] = await Promise.all([
       getCurrentUser(),
       fetchEntitlements(),
