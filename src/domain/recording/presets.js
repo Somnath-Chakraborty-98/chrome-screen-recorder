@@ -1,23 +1,23 @@
 /** @typedef {'low'|'medium'|'high'} QualityLevel */
-/** @typedef {'webm'|'mp4'} RecordingFormat */
+/** @typedef {'mp4'} RecordingFormat */
 
 export const QUALITY_OPTIONS = Object.freeze({
   low: {
     id: 'low',
     label: 'Low',
-    hint: 'Low — fastest share',
+    hint: '800 Kbps — smaller files',
     sizeFactor: 0.6
   },
   medium: {
     id: 'medium',
     label: 'Medium',
-    hint: 'Medium — balanced',
+    hint: '2.5 Mbps — balanced',
     sizeFactor: 1
   },
   high: {
     id: 'high',
     label: 'High',
-    hint: 'High — best clarity',
+    hint: '5 Mbps — best clarity',
     sizeFactor: 1.6
   }
 });

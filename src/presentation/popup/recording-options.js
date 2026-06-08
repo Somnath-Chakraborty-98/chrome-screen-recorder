@@ -1,45 +1,15 @@
-import { QUALITY_OPTIONS } from '../../domain/recording/presets.js';
+import { QUALITY_OPTIONS, capQuality } from '../../domain/recording/presets.js';
 import { PRICING_URL, LOGIN_URL } from '../shared/urls.js';
-
-const SETUP_COLLAPSED_KEY = 'recordeasy_setup_collapsed';
+import { canUseQuality } from '../../infrastructure/entitlements/entitlements-service.js';
 
 /**
  * @param {import('../../infrastructure/entitlements/entitlements-service.js').Entitlements} entitlements
  */
 export function renderRecordingOptions(entitlements) {
-  renderFormatSelect(entitlements);
   renderDurationBadge(entitlements);
+  renderQualitySelect(entitlements);
   renderMeetingCostSection(entitlements);
   renderSignInHint(entitlements);
-}
-
-/**
- * @param {import('../../infrastructure/entitlements/entitlements-service.js').Entitlements} entitlements
- */
-function renderFormatSelect(entitlements) {
-  const webmRadio = document.getElementById('formatWebm');
-  const mp4Radio = document.getElementById('formatMp4');
-  const mp4Lock = document.getElementById('mp4Lock');
-
-  if (!webmRadio || !mp4Radio) return;
-
-  webmRadio.checked = true;
-  mp4Radio.checked = false;
-
-  const mp4Label = document.getElementById('formatMp4Label');
-
-  if (entitlements.mp4Enabled) {
-    mp4Radio.disabled = false;
-    mp4Label?.classList.remove('format-locked');
-    if (mp4Lock) mp4Lock.classList.add('hidden');
-  } else {
-    mp4Radio.disabled = true;
-    mp4Label?.classList.add('format-locked');
-    if (mp4Lock) {
-      mp4Lock.classList.remove('hidden');
-      mp4Lock.href = entitlements.isLoggedIn ? PRICING_URL : LOGIN_URL;
-    }
-  }
 }
 
 /**
@@ -53,6 +23,37 @@ function renderDurationBadge(entitlements) {
   const plan = entitlements.planName;
   badge.textContent = `${plan}: ${limit} min max`;
   badge.title = `Your ${plan} plan allows up to ${limit} minutes per recording.`;
+}
+
+/**
+ * @param {import('../../infrastructure/entitlements/entitlements-service.js').Entitlements} entitlements
+ */
+function renderQualitySelect(entitlements) {
+  const container = document.getElementById('qualityOptions');
+  if (!container) return;
+
+  const defaultQuality = entitlements.maxQuality;
+
+  container.innerHTML = Object.values(QUALITY_OPTIONS)
+    .map((q) => {
+      const allowed = canUseQuality(q.id, entitlements);
+      const checked = q.id === defaultQuality ? 'checked' : '';
+      const lock = allowed
+        ? ''
+        : `<a class="option-lock" href="${entitlements.isLoggedIn ? PRICING_URL : LOGIN_URL}" target="_blank" title="Upgrade">🔒</a>`;
+
+      return `
+        <label class="quality-option ${allowed ? '' : 'locked'}">
+          <input type="radio" name="recordQuality" value="${q.id}" ${allowed ? '' : 'disabled'} ${checked} />
+          <span class="quality-option-text">
+            <strong>${q.label}</strong>
+            <span class="quality-option-hint">${q.hint}</span>
+            ${lock}
+          </span>
+        </label>
+      `;
+    })
+    .join('');
 }
 
 /**
@@ -115,59 +116,23 @@ function renderSignInHint(entitlements) {
 }
 
 /**
- * Restore collapsible recording setup state from storage.
- */
-export async function initRecordingSetupCollapse() {
-  const toggle = document.getElementById('recordingSetupToggle');
-  const body = document.getElementById('recordingSetupBody');
-  if (!toggle || !body) return;
-
-  const { [SETUP_COLLAPSED_KEY]: collapsed } = await chrome.storage.local.get(SETUP_COLLAPSED_KEY);
-  setSetupCollapsed(Boolean(collapsed), toggle, body);
-
-  toggle.addEventListener('click', async () => {
-    const nextCollapsed = toggle.getAttribute('aria-expanded') === 'true';
-    setSetupCollapsed(nextCollapsed, toggle, body);
-    await chrome.storage.local.set({ [SETUP_COLLAPSED_KEY]: nextCollapsed });
-  });
-}
-
-/**
- * @param {boolean} collapsed
- * @param {HTMLButtonElement} toggle
- * @param {HTMLElement} body
- */
-function setSetupCollapsed(collapsed, toggle, body) {
-  toggle.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
-  body.classList.toggle('hidden', collapsed);
-  toggle.querySelector('.collapse-icon').textContent = collapsed ? '▸' : '▾';
-}
-
-/**
- * @returns {{ format: 'webm'|'mp4', quality: 'low'|'medium'|'high', meetingCost: { enabled: boolean, hourlyRate: number } }}
+ * @returns {{ quality: 'low'|'medium'|'high', meetingCost: { enabled: boolean, hourlyRate: number } }}
  */
 export function readRecordingOptions(entitlements) {
-  const format =
-    document.getElementById('formatMp4')?.checked && entitlements.mp4Enabled
-      ? 'mp4'
-      : 'webm';
-  const quality = entitlements.maxQuality;
+  const selected =
+    document.querySelector('input[name="recordQuality"]:checked')?.value || entitlements.maxQuality;
+  const quality = capQuality(
+    /** @type {'low'|'medium'|'high'} */ (selected),
+    entitlements.maxQuality
+  );
   const meetingEnabled = Boolean(document.getElementById('meetingCostToggle')?.checked);
   const hourlyRate = Number(document.getElementById('hourlyRateInput')?.value || 0);
 
   return {
-    format,
     quality,
     meetingCost: {
       enabled: meetingEnabled && entitlements.meetingCostEnabled,
       hourlyRate: meetingEnabled ? hourlyRate : 0
     }
   };
-}
-
-/**
- * @param {import('../../infrastructure/entitlements/entitlements-service.js').Entitlements} entitlements
- */
-export function getQualityLabelForPlan(entitlements) {
-  return QUALITY_OPTIONS[entitlements.maxQuality]?.hint || '';
 }

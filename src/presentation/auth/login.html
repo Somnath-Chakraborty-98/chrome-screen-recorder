@@ -1,70 +1,70 @@
-<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <title>RecordEasy — Sign in</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <link rel="stylesheet" href="../shared/theme.css" />
-  <link rel="stylesheet" href="../shared/auth-layout.css" />
-  <link rel="stylesheet" href="login.css" />
-</head>
-<body>
-  <div class="auth-page">
-    <header class="auth-header">
-      <h1>RecordEasy</h1>
-      <p>Sign in to unlock MP4, higher quality, and more.</p>
-    </header>
-
-    <div class="re-card auth-card">
-      <form id="signinForm" class="auth-form" data-panel="signin">
-        <label class="re-label" for="signinEmail">Email</label>
-        <input class="re-input" id="signinEmail" type="email" autocomplete="email" required />
-
-        <label class="re-label" for="signinPassword">Password</label>
-        <input class="re-input" id="signinPassword" type="password" autocomplete="current-password" required />
-
-        <button class="re-btn re-btn-primary auth-submit" type="submit">Sign in</button>
-
-        <div class="auth-alt-actions">
-          <button id="showSignup" class="auth-alt-btn" type="button">Create account</button>
-          <button id="showForgot" class="auth-alt-btn" type="button">Forgot password</button>
-        </div>
-      </form>
-
-      <form id="signupForm" class="auth-form hidden" data-panel="signup" hidden>
-        <button id="backToSigninFromSignup" class="auth-back-link" type="button">← Back to sign in</button>
-
-        <label class="re-label" for="signupName">Full name</label>
-        <input class="re-input" id="signupName" type="text" autocomplete="name" required />
-
-        <label class="re-label" for="signupEmail">Email</label>
-        <input class="re-input" id="signupEmail" type="email" autocomplete="email" required />
-
-        <label class="re-label" for="signupPassword">Password</label>
-        <input class="re-input" id="signupPassword" type="password" autocomplete="new-password" minlength="8" required />
-
-        <button class="re-btn re-btn-primary auth-submit" type="submit">Create account</button>
-        <p class="auth-hint">We will send a verification email before your first sign in.</p>
-      </form>
-
-      <form id="forgotForm" class="auth-form hidden" data-panel="forgot" hidden>
-        <button id="backToSigninFromForgot" class="auth-back-link" type="button">← Back to sign in</button>
-
-        <label class="re-label" for="forgotEmail">Email</label>
-        <input class="re-input" id="forgotEmail" type="email" autocomplete="email" required />
-
-        <button class="re-btn re-btn-primary auth-submit" type="submit">Send reset link</button>
-      </form>
-
-      <div id="message" class="re-message hidden" role="status"></div>
-      <div id="earlyUserBanner" class="early-banner hidden"></div>
-    </div>
-
-    <footer class="auth-footer">
-      <a id="pricingLink" class="re-btn" href="#">View plans</a>
-    </footer>
-  </div>
-
-  <script type="module" src="login.js"></script>
-</body>
-</html>
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>RecordEasy — Sign in</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="stylesheet" href="../shared/theme.css" />
+  <link rel="stylesheet" href="../shared/auth-layout.css" />
+  <link rel="stylesheet" href="login.css" />
+</head>
+<body>
+  <div class="auth-page">
+    <header class="auth-header">
+      <h1>RecordEasy</h1>
+      <p>Sign in to unlock higher MP4 quality and more.</p>
+    </header>
+
+    <div class="re-card auth-card">
+      <form id="signinForm" class="auth-form" data-panel="signin">
+        <label class="re-label" for="signinEmail">Email</label>
+        <input class="re-input" id="signinEmail" type="email" autocomplete="email" required />
+
+        <label class="re-label" for="signinPassword">Password</label>
+        <input class="re-input" id="signinPassword" type="password" autocomplete="current-password" required />
+
+        <button class="re-btn re-btn-primary auth-submit" type="submit">Sign in</button>
+
+        <div class="auth-alt-actions">
+          <button id="showSignup" class="auth-alt-btn" type="button">Create account</button>
+          <button id="showForgot" class="auth-alt-btn" type="button">Forgot password</button>
+        </div>
+      </form>
+
+      <form id="signupForm" class="auth-form hidden" data-panel="signup" hidden>
+        <button id="backToSigninFromSignup" class="auth-back-link" type="button">← Back to sign in</button>
+
+        <label class="re-label" for="signupName">Full name</label>
+        <input class="re-input" id="signupName" type="text" autocomplete="name" required />
+
+        <label class="re-label" for="signupEmail">Email</label>
+        <input class="re-input" id="signupEmail" type="email" autocomplete="email" required />
+
+        <label class="re-label" for="signupPassword">Password</label>
+        <input class="re-input" id="signupPassword" type="password" autocomplete="new-password" minlength="8" required />
+
+        <button class="re-btn re-btn-primary auth-submit" type="submit">Create account</button>
+        <p class="auth-hint">We will send a verification email before your first sign in.</p>
+      </form>
+
+      <form id="forgotForm" class="auth-form hidden" data-panel="forgot" hidden>
+        <button id="backToSigninFromForgot" class="auth-back-link" type="button">← Back to sign in</button>
+
+        <label class="re-label" for="forgotEmail">Email</label>
+        <input class="re-input" id="forgotEmail" type="email" autocomplete="email" required />
+
+        <button class="re-btn re-btn-primary auth-submit" type="submit">Send reset link</button>
+      </form>
+
+      <div id="message" class="re-message hidden" role="status"></div>
+      <div id="earlyUserBanner" class="early-banner hidden"></div>
+    </div>
+
+    <footer class="auth-footer">
+      <a id="pricingLink" class="re-btn" href="#">View plans</a>
+    </footer>
+  </div>
+
+  <script type="module" src="login.js"></script>
+</body>
+</html>

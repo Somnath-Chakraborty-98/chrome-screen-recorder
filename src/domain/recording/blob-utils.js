@@ -2,10 +2,10 @@
  * @param {string} [mimeType]
  */
 export function normalizePlaybackMime(mimeType) {
-  if (!mimeType) return 'video/webm';
+  if (!mimeType) return 'video/mp4';
   const base = mimeType.split(';')[0].trim().toLowerCase();
   if (base.includes('mp4')) return 'video/mp4';
-  return 'video/webm';
+  return base || 'video/mp4';
 }
 
 /**
@@ -57,6 +57,7 @@ export function readVideoDuration(video) {
  * @param {number} [fallbackSeconds]
  */
 export async function probeVideoDuration(blob, mimeType, fallbackSeconds = 0) {
+  const normalized = normalizePlaybackMime(mimeType || blob.type);
   const url = URL.createObjectURL(blob);
   const probe = document.createElement('video');
   probe.preload = 'auto';
@@ -70,15 +71,18 @@ export async function probeVideoDuration(blob, mimeType, fallbackSeconds = 0) {
   };
 
   try {
-    // Step 1: wait until we can at least read metadata
     await new Promise((resolve) => {
       probe.addEventListener('loadedmetadata', resolve, { once: true });
-      probe.addEventListener('error', resolve, { once: true }); // still proceed on error
+      probe.addEventListener('error', resolve, { once: true });
       probe.src = url;
       setTimeout(resolve, 6000);
     });
 
-    // Step 2: seek to the very end to force Chrome to parse the full WebM index
+    if (normalized === 'video/mp4') {
+      const measured = readVideoDuration(probe);
+      return measured > 0 ? measured : Math.max(0, fallbackSeconds);
+    }
+
     await new Promise((resolve) => {
       probe.addEventListener('seeked', resolve, { once: true });
       probe.addEventListener('error', resolve, { once: true });
@@ -92,12 +96,28 @@ export async function probeVideoDuration(blob, mimeType, fallbackSeconds = 0) {
     });
 
     const measured = readVideoDuration(probe);
-    return Math.max(measured, fallbackSeconds);
+    return measured > 0 ? measured : Math.max(0, fallbackSeconds);
   } catch {
-    return fallbackSeconds;
+    return Math.max(0, fallbackSeconds);
   } finally {
     cleanup();
   }
+}
+
+/**
+ * Pick the best duration from probe vs timer — never inflate past actual media.
+ * @param {number} probedSeconds
+ * @param {number} fallbackSeconds
+ */
+export function resolveDurationSeconds(probedSeconds, fallbackSeconds = 0) {
+  const probed = Math.max(0, Number(probedSeconds) || 0);
+  const fallback = Math.max(0, Number(fallbackSeconds) || 0);
+
+  if (probed > 0 && fallback > 0) {
+    return Math.max(1, Math.round(Math.min(probed, fallback)));
+  }
+
+  return Math.max(1, Math.round(probed || fallback || 1));
 }
 
 /**

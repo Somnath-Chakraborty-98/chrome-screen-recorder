@@ -1,14 +1,17 @@
-import { fetchEntitlements, canUseQuality, GUEST_ENTITLEMENTS } from '../../infrastructure/entitlements/entitlements-service.js';
-import { QUALITY_OPTIONS } from '../../domain/recording/presets.js';
-import { normalizePlaybackMime, readVideoDuration, waitForVideoReady } from '../../domain/recording/blob-utils.js';
-import { estimateSizeLabel } from '../../domain/recording/recorder-config.js';
-import { prepareRecordingBlob } from '../../domain/recording/webm-duration-fix.js';
+import { fetchEntitlements, GUEST_ENTITLEMENTS } from '../../infrastructure/entitlements/entitlements-service.js';
+import {
+  normalizePlaybackMime,
+  readVideoDuration,
+  resolveDurationSeconds,
+  waitForVideoReady
+} from '../../domain/recording/blob-utils.js';
+import { createPreviewBlob, prepareRecordingBlob } from '../../domain/recording/webm-duration-fix.js';
 import { formatCostSummary } from '../../domain/meeting-cost/calculator.js';
 import { initTheme } from '../shared/theme.js';
 import { loadRecording, deleteRecording } from '../../infrastructure/recording/recording-store.js';
 import { LOGIN_URL, PRICING_URL, POPUP_URL } from '../shared/urls.js';
 
-let recordingBlob = null;
+let downloadBlob = null;
 let recordingUrl = null;
 let recordingMeta = null;
 let recordingId = null;
@@ -25,17 +28,11 @@ const durationEl = document.getElementById('duration');
 const fileSizeEl = document.getElementById('fileSize');
 const recordedFormatEl = document.getElementById('recordedFormat');
 const statusMessage = document.getElementById('statusMessage');
-const qualityOptionsEl = document.getElementById('qualityOptions');
-const formatOptionsEl = document.getElementById('formatOptions');
 const filenameInput = document.getElementById('filenameInput');
 const filenameHint = document.getElementById('filenameHint');
 const filenameLock = document.getElementById('filenameLock');
-const watermarkOverlay = document.getElementById('watermarkOverlay');
 const meetingCostSummary = document.getElementById('meetingCostSummary');
 const planBadge = document.getElementById('planBadge');
-const exportProgress = document.getElementById('exportProgress');
-const exportProgressFill = document.getElementById('exportProgressFill');
-const exportProgressText = document.getElementById('exportProgressText');
 
 initTheme();
 
@@ -57,7 +54,12 @@ video.addEventListener('loadedmetadata', syncDurationFromVideo);
 
 function syncDurationFromVideo() {
   const duration = readVideoDuration(video);
-  if (duration > resolvedDurationSeconds) {
+  if (duration <= 0) return;
+
+  if (
+    resolvedDurationSeconds <= 0 ||
+    duration < resolvedDurationSeconds - 0.5
+  ) {
     updateDurationDisplay(duration);
   }
 }
@@ -73,38 +75,32 @@ async function initialize() {
   try {
     const result = await chrome.storage.local.get([
       'recordingId',
-      'recordingData',
       'recordingTimestamp',
       'recordingMeta'
     ]);
 
     recordingMeta = result.recordingMeta || {
-      mimeType: 'video/webm',
-      format: 'webm',
+      mimeType: 'video/mp4',
+      format: 'mp4',
       quality: 'low',
-      fileExtension: 'webm',
-      watermarkRequired: true,
+      fileExtension: 'mp4',
       entitlements: {}
     };
 
-    let blob = null;
-
-    if (result.recordingId) {
-      recordingId = result.recordingId;
-      const record = await loadRecording(recordingId);
-      if (!record?.blob) {
-        showError('Recording file missing. Please record again.');
-        return;
-      }
-      blob = record.blob;
-      recordingMeta = record.meta || recordingMeta;
-    } else if (result.recordingData) {
-      const res = await fetch(result.recordingData);
-      blob = await res.blob();
-    } else {
+    if (!result.recordingId) {
       showError('No recording found. Please record again.');
       return;
     }
+
+    recordingId = result.recordingId;
+    const record = await loadRecording(recordingId);
+    if (!record?.blob) {
+      showError('Recording file missing. Please record again.');
+      return;
+    }
+
+    const blob = record.blob;
+    recordingMeta = record.meta || recordingMeta;
 
     if (!blob || blob.size === 0) {
       showError('Recording is empty. Please record again.');
@@ -117,23 +113,24 @@ async function initialize() {
       mimeType,
       recordingMeta.durationSeconds || 0
     );
-    recordingBlob = prepared.blob;
-    recordingMeta.mimeType = recordingBlob.type;
+    downloadBlob = prepared.blob;
+    recordingMeta.mimeType = downloadBlob.type;
     recordingMeta.durationSeconds = prepared.durationSeconds;
-    updateFileSize(recordingBlob.size);
+    updateFileSize(downloadBlob.size);
 
     if (videoContainer) videoContainer.classList.add('is-loading');
     video.preload = 'auto';
-    recordingUrl = URL.createObjectURL(recordingBlob);
+    const previewBlob = await createPreviewBlob(downloadBlob);
+    recordingUrl = URL.createObjectURL(previewBlob);
     video.src = recordingUrl;
     video.load();
 
     await waitForVideoReady(video);
 
-    const finalDuration = Math.max(
-      prepared.durationSeconds,
-      readVideoDuration(video),
-      recordingMeta.durationSeconds || 0
+    const videoDuration = readVideoDuration(video);
+    const finalDuration = resolveDurationSeconds(
+      videoDuration,
+      prepared.durationSeconds || recordingMeta.durationSeconds || 0
     );
     updateDurationDisplay(finalDuration);
 
@@ -161,95 +158,25 @@ function setupExportUi() {
   exportUiReady = true;
 
   const recordedQuality = recordingMeta.quality || 'low';
-  const recordedFormat = recordingMeta.format || 'webm';
+  recordedFormatEl.textContent = `MP4 · ${capitalize(recordedQuality)}`;
 
-  recordedFormatEl.textContent = `${recordedFormat.toUpperCase()} · ${capitalize(recordedQuality)}`;
-
-  if (recordingMeta.watermarkRequired) {
-    watermarkOverlay.classList.remove('hidden');
-  }
-
-  renderQualityOptions(recordedQuality);
-  renderFormatOptions(recordedFormat);
-  setupFilenameField(recordedFormat);
+  setupFilenameField();
   renderMeetingCostSummary();
-
-  qualityOptionsEl.addEventListener('change', updateEstimatedSize);
-  formatOptionsEl.addEventListener('change', () => {
-    setupFilenameField(getSelectedFormat());
-    updateEstimatedSize();
-  });
+  updateEstimatedSize();
 }
 
 function renderPlanBadge() {
   const parts = [`<span class="re-badge">${entitlements.planName}</span>`];
   if (entitlements.isEarlyUser) {
-    parts.push('<span class="re-badge re-badge-early">Early user · no watermark</span>');
+    parts.push('<span class="re-badge re-badge-early">Early user</span>');
   }
   planBadge.innerHTML = parts.join('');
 }
 
-function renderQualityOptions(recordedQuality) {
-  const defaultQuality = canUseQuality(recordedQuality, entitlements)
-    ? recordedQuality
-    : entitlements.maxQuality;
-
-  qualityOptionsEl.innerHTML = Object.values(QUALITY_OPTIONS)
-    .map((q) => {
-      const allowed = canUseQuality(q.id, entitlements);
-      const isRecorded = q.id === recordedQuality;
-      const checked = q.id === defaultQuality ? 'checked' : '';
-      const lock = allowed
-        ? ''
-        : `<a class="option-lock" href="${PRICING_URL}" target="_blank" title="Upgrade">🔒</a>`;
-
-      return `
-        <label class="export-option ${allowed ? '' : 'locked'}">
-          <input type="radio" name="quality" value="${q.id}" ${allowed ? '' : 'disabled'} ${checked} />
-          <span class="export-option-text export-option-inline">
-            <strong>${q.label}</strong>
-            <span class="export-option-hint">— ${q.hint}${isRecorded ? ' · recorded' : ''}</span>
-            ${lock}
-          </span>
-        </label>
-      `;
-    })
-    .join('');
-
-  updateEstimatedSize();
-}
-
-function renderFormatOptions(recordedFormat) {
-  const formats = [
-    { id: 'webm', label: 'WebM', allowed: true },
-    { id: 'mp4', label: 'MP4', allowed: entitlements.mp4Enabled }
-  ];
-
-  const safeFormat = recordedFormat === 'mp4' ? 'mp4' : 'webm';
-
-  formatOptionsEl.innerHTML = formats
-    .map((f) => {
-      const lock = f.allowed
-        ? ''
-        : `<a class="option-lock" href="${entitlements.isLoggedIn ? PRICING_URL : LOGIN_URL}" target="_blank">🔒</a>`;
-      const checked = f.id === safeFormat ? 'checked' : '';
-
-      return `
-        <label class="export-option ${f.allowed ? '' : 'locked'}">
-          <input type="radio" name="format" value="${f.id}" ${f.allowed ? '' : 'disabled'} ${checked} />
-          <span class="export-option-text export-option-inline">
-            <strong>${f.label}</strong>${lock}
-          </span>
-        </label>
-      `;
-    })
-    .join('');
-}
-
-function setupFilenameField(format) {
+function setupFilenameField() {
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
   const defaultName = `recordeasy-${timestamp}`;
-  const ext = format === 'mp4' && entitlements.mp4Enabled ? 'mp4' : recordingMeta.fileExtension || 'webm';
+  const ext = 'mp4';
 
   filenameInput.value = `${defaultName}.${ext}`;
 
@@ -279,45 +206,26 @@ function renderMeetingCostSummary() {
     }) + ` — Total: ₹${Number(mc.calculatedCost).toLocaleString('en-IN')}`;
 }
 
-function getSelectedQuality() {
-  return qualityOptionsEl.querySelector('input[name="quality"]:checked')?.value || recordingMeta.quality;
-}
-
-function getSelectedFormat() {
-  const selected = formatOptionsEl.querySelector('input[name="format"]:checked')?.value;
-  if (selected === 'mp4' && entitlements.mp4Enabled) return 'mp4';
-  return recordingMeta.fileExtension === 'mp4' ? 'mp4' : 'webm';
-}
-
 function updateEstimatedSize() {
-  if (!recordingBlob) return;
-  const quality = getSelectedQuality();
-  fileSizeEl.textContent = estimateSizeLabel(recordingBlob.size, quality);
+  if (!downloadBlob) return;
+  fileSizeEl.textContent = `${(downloadBlob.size / (1024 * 1024)).toFixed(2)} MB`;
 }
 
 async function handleDownload() {
-  if (!recordingBlob) {
+  if (!downloadBlob) {
     showError('No recording available.');
-    return;
-  }
-
-  const quality = getSelectedQuality();
-  if (!canUseQuality(quality, entitlements)) {
-    showError('Upgrade your plan to use this quality tier.');
-    window.open(PRICING_URL, '_blank');
     return;
   }
 
   try {
     downloadBtn.disabled = true;
 
-    if (recordingBlob.size < 1024) {
+    if (downloadBlob.size < 1024) {
       throw new Error('Recording file is empty. Please record again.');
     }
 
-    // Download the original recording blob — no re-encode (keeps WebM compatible with Windows players).
-    const exportBlob = recordingBlob;
-    const filename = sanitizeFilename(filenameInput.value || 'recordeasy-recording.webm');
+    const exportBlob = downloadBlob;
+    const filename = sanitizeFilename(filenameInput.value || 'recordeasy-recording.mp4');
     const url = URL.createObjectURL(exportBlob);
     const a = document.createElement('a');
     a.href = url;
@@ -333,7 +241,6 @@ async function handleDownload() {
       window.close();
     }, 1500);
   } catch (error) {
-    showExportProgress(false);
     console.error('Download failed:', error);
     showError(error.message || 'Export failed.');
     downloadBtn.disabled = false;
@@ -356,14 +263,8 @@ function handleNewRecording() {
   cleanup().then(() => setTimeout(() => window.close(), 400));
 }
 
-function showExportProgress(show, pct = 0, text = 'Preparing export…') {
-  exportProgress.classList.toggle('hidden', !show);
-  exportProgressFill.style.width = `${pct}%`;
-  exportProgressText.textContent = text;
-}
-
 function sanitizeFilename(name) {
-  return name.replace(/[<>:"/\\|?*]+/g, '-').trim() || 'recordeasy-recording.webm';
+  return name.replace(/[<>:"/\\|?*]+/g, '-').trim() || 'recordeasy-recording.mp4';
 }
 
 function formatDuration(seconds) {
@@ -402,11 +303,10 @@ async function cleanup() {
   }
   await chrome.storage.local.remove([
     'recordingId',
-    'recordingData',
     'recordingTimestamp',
     'recordingMeta'
   ]);
-  recordingBlob = null;
+  downloadBlob = null;
   recordingUrl = null;
   recordingId = null;
 }

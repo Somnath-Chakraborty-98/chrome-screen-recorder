@@ -1,93 +1,150 @@
 // background.js
-// Listens for meeting detection and opens recorder window
+
+const PREVIEW_URL = chrome.runtime.getURL('dist/src/presentation/preview/preview.html');
 
 let recorderWindowId = null;
+let previewOpenedForSession = false;
+let recordingStopWatchId = null;
 
-// Listen for messages from content script
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-    if (message.action === 'meetingDetected') {
-        console.log('Meeting detected:', message.meetingType, 'on tab', sender.tab.id);
+  if (message.action === 'meetingDetected') {
+    console.log('Meeting detected:', message.meetingType, 'on tab', sender.tab?.id);
+    openRecorderWindow(message.meetingType);
+    return;
+  }
 
-        // Open recorder window if not already open
-        openRecorderWindow(message.meetingType);
+  if (message.action === 'registerRecordingWindow') {
+    if (message.windowId) {
+      recorderWindowId = message.windowId;
+      previewOpenedForSession = false;
     }
+    return;
+  }
+
+  if (message.action === 'recordingStopping') {
+    previewOpenedForSession = false;
+    watchForRecordingComplete(message.since || Date.now() - 5000);
+    return;
+  }
+
+  if (message.action === 'recordingFinished') {
+    stopRecordingWatch();
+    openPreviewAndCloseRecorder();
+    sendResponse({ ok: true });
+    return true;
+  }
 });
 
-// Inject content script into Zoom tabs when they load
-chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
-    if (changeInfo.status === 'complete' && tab.url && tab.url.includes('zoom.us')) {
-        console.log('Zoom tab detected:', tab.url);
+function stopRecordingWatch() {
+  if (recordingStopWatchId) {
+    clearInterval(recordingStopWatchId);
+    recordingStopWatchId = null;
+  }
+}
 
-        // Check if script is already injected
-        chrome.scripting.executeScript({
-            target: { tabId: tabId },
-            func: () => window.meetingDetectionLoaded
-        }).then(results => {
-            if (!results || !results[0] || !results[0].result) {
-                // Script not loaded, inject it
-                chrome.scripting.executeScript({
-                    target: { tabId: tabId },
-                    files: ['dist/src/application/content/content.js']
-                }).then(() => {
-                    console.log('Content script injected into Zoom');
-                }).catch(err => {
-                    console.error('Injection failed:', err);
-                });
-            }
-        });
-    }
+function watchForRecordingComplete(sinceMs) {
+  stopRecordingWatch();
+
+  const deadline = Date.now() + 120000;
+  recordingStopWatchId = setInterval(() => {
+    chrome.storage.local.get(['recordingId', 'recordingTimestamp'], (data) => {
+      if (
+        data.recordingId &&
+        data.recordingTimestamp &&
+        data.recordingTimestamp >= sinceMs
+      ) {
+        stopRecordingWatch();
+        openPreviewAndCloseRecorder();
+        return;
+      }
+
+      if (Date.now() > deadline) {
+        stopRecordingWatch();
+      }
+    });
+  }, 300);
+}
+
+function openPreviewAndCloseRecorder() {
+  if (previewOpenedForSession) return;
+  previewOpenedForSession = true;
+  stopRecordingWatch();
+
+  chrome.tabs.create({ url: PREVIEW_URL, active: true }, () => {
+    const winId = recorderWindowId;
+    if (!winId) return;
+
+    chrome.windows.remove(winId, () => {
+      if (chrome.runtime.lastError) {
+        console.warn('Could not close recorder window:', chrome.runtime.lastError);
+      }
+      recorderWindowId = null;
+    });
+  });
+}
+
+chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+  if (changeInfo.status === 'complete' && tab.url && tab.url.includes('zoom.us')) {
+    chrome.scripting
+      .executeScript({
+        target: { tabId },
+        func: () => window.meetingDetectionLoaded
+      })
+      .then((results) => {
+        if (!results || !results[0] || !results[0].result) {
+          chrome.scripting
+            .executeScript({
+              target: { tabId },
+              files: ['dist/src/application/content/content.js']
+            })
+            .catch((err) => console.error('Injection failed:', err));
+        }
+      });
+  }
 });
 
 function openRecorderWindow(meetingType) {
-    // Check if recorder window is already open
-    if (recorderWindowId) {
-        chrome.windows.get(recorderWindowId, (win) => {
-            if (chrome.runtime.lastError || !win) {
-                // Window was closed, create new one
-                createRecorderWindow(meetingType);
-            } else {
-                // Window exists, just focus it
-                chrome.windows.update(recorderWindowId, { focused: true });
-                console.log('Recorder window already open, focusing...');
-            }
-        });
-    } else {
+  if (recorderWindowId) {
+    chrome.windows.get(recorderWindowId, (win) => {
+      if (chrome.runtime.lastError || !win) {
         createRecorderWindow(meetingType);
-    }
+      } else {
+        chrome.windows.update(recorderWindowId, { focused: true });
+      }
+    });
+  } else {
+    createRecorderWindow(meetingType);
+  }
 }
 
 function createRecorderWindow(meetingType) {
-    chrome.windows.create({
-        url: chrome.runtime.getURL('dist/src/presentation/popup/popup.html?mode=window&meeting=' + meetingType),
-        type: 'popup',
-        width: 640,
-        height: 600,
-        focused: true,
-        top: 100,
-        left: 100
-    }, (window) => {
-        if (window) {
-            recorderWindowId = window.id;
-            console.log('Recorder window opened:', recorderWindowId);
-
-            // Set max size immediately after creation
-            chrome.windows.update(window.id, {
-                width: 640,
-                height: 600
-            });
-        }
-    });
+  chrome.windows.create(
+    {
+      url: chrome.runtime.getURL(
+        'dist/src/presentation/popup/popup.html?mode=window&meeting=' + meetingType
+      ),
+      type: 'popup',
+      width: 640,
+      height: 600,
+      focused: true,
+      top: 100,
+      left: 100
+    },
+    (window) => {
+      if (window) {
+        recorderWindowId = window.id;
+        previewOpenedForSession = false;
+      }
+    }
+  );
 }
 
-// Clean up window ID when closed
 chrome.windows.onRemoved.addListener((windowId) => {
-    if (windowId === recorderWindowId) {
-        recorderWindowId = null;
-        console.log('Recorder window closed');
-    }
+  if (windowId === recorderWindowId) {
+    recorderWindowId = null;
+  }
 });
 
-// Handle extension icon click (keep existing functionality)
 chrome.action.onClicked.addListener(() => {
-    openRecorderWindow('manual');
+  openRecorderWindow('manual');
 });

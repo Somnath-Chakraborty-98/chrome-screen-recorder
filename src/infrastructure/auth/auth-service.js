@@ -105,10 +105,3 @@ async function syncEmailVerified(user) {
     console.warn('Failed to sync email_verified:', error.message);
   }
 }
-
-export function onAuthStateChange(callback) {
-  if (!supabase) return { data: { subscription: { unsubscribe: () => {} } } };
-  return supabase.auth.onAuthStateChange((_event, session) => {
-    callback(session);
-  });
-}

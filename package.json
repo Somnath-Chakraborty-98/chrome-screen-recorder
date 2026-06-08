@@ -14,7 +14,6 @@
     "vite": "^5.4.21"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.107.0",
-    "fix-webm-duration": "^1.0.6"
+    "@supabase/supabase-js": "^2.107.0"
   }
 }

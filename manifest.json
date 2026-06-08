@@ -8,10 +8,10 @@
     "default_title": "RecordEasy"
   },
   "permissions": [
-    "tabCapture",
     "tabs",
     "scripting",
-    "storage"
+    "storage",
+    "windows"
   ],
   "host_permissions": [
     "https://guiupuhxcdoehxulaygv.supabase.co/*",

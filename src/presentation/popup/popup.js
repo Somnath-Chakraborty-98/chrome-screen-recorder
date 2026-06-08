@@ -1,12 +1,12 @@
 import { GUEST_ENTITLEMENTS } from '../../infrastructure/entitlements/entitlements-service.js';
 import { normalizePlaybackMime } from '../../domain/recording/blob-utils.js';
 import { prepareRecordingBlob } from '../../domain/recording/webm-duration-fix.js';
-import { resolveRecordingConfig } from '../../domain/recording/recorder-config.js';
+import { isMp4RecordingSupported, resolveRecordingConfig } from '../../domain/recording/recorder-config.js';
 import { calculateMeetingCost, persistMeetingCostSession } from '../../domain/meeting-cost/calculator.js';
 import { PREVIEW_URL } from '../../infrastructure/extension-paths.js';
 import { saveRecording } from '../../infrastructure/recording/recording-store.js';
 import { initAccountBar } from './account-bar.js';
-import { initRecordingSetupCollapse, renderRecordingOptions, readRecordingOptions } from './recording-options.js';
+import { renderRecordingOptions, readRecordingOptions } from './recording-options.js';
 
 // ============================================================
 // SCREEN RECORDER - Main Controller
@@ -28,26 +28,7 @@ const pauseBtn = document.getElementById('pauseBtn');
 const recordingTimerEl = document.getElementById('recordingTimer');
 const recordingLimitEl = document.getElementById('recordingLimit');
 
-// Block MP4 selection when disabled (Free / guest)
-document.getElementById('formatMp4')?.addEventListener('click', (event) => {
-  const mp4 = document.getElementById('formatMp4');
-  const webm = document.getElementById('formatWebm');
-  if (mp4?.disabled) {
-    event.preventDefault();
-    if (webm) webm.checked = true;
-    mp4.checked = false;
-  }
-});
-document.getElementById('formatMp4Label')?.addEventListener('click', (event) => {
-  const mp4 = document.getElementById('formatMp4');
-  if (mp4?.disabled) {
-    event.preventDefault();
-    event.stopPropagation();
-  }
-});
-
 renderRecordingOptions(activeEntitlements);
-initRecordingSetupCollapse();
 if (recordingLimitEl) {
   recordingLimitEl.textContent = `/ ${activeEntitlements.durationMinutes}:00 max`;
 }
@@ -80,6 +61,96 @@ const preview = document.getElementById('preview');
 const statusEl = document.getElementById('status');
 const includeSystemAudioCheckbox = document.getElementById('includeSystemAudio');
 const includeMicCheckbox = document.getElementById('includeMic');
+
+function registerRecordingSession() {
+  try {
+    chrome.windows.getCurrent((win) => {
+      if (chrome.runtime.lastError || !win?.id) return;
+      chrome.runtime.sendMessage({
+        action: 'registerRecordingWindow',
+        windowId: win.id
+      });
+      chrome.windows.update(
+        win.id,
+        { focused: false, drawAttention: false },
+        () => {
+          chrome.windows.update(win.id, { state: 'minimized' }, () => {
+            if (chrome.runtime.lastError) {
+              console.warn('Could not minimize recording window:', chrome.runtime.lastError);
+            }
+          });
+        }
+      );
+    });
+  } catch (e) {
+    console.warn('Could not register recording session:', e);
+  }
+}
+
+function setRecordingOptionsLocked(locked) {
+  if (includeSystemAudioCheckbox) includeSystemAudioCheckbox.disabled = locked;
+  if (includeMicCheckbox) includeMicCheckbox.disabled = locked;
+}
+
+function closeRecordingWindow() {
+  try {
+    chrome.windows.getCurrent((win) => {
+      if (chrome.runtime.lastError || !win?.id) return;
+      chrome.windows.remove(win.id);
+    });
+  } catch (e) {
+    console.warn('Could not close recording window:', e);
+  }
+}
+
+function openPreviewAndClosePopup() {
+  chrome.runtime.sendMessage({ action: 'recordingFinished' }, () => {
+    if (chrome.runtime.lastError) {
+      chrome.tabs.create({ url: PREVIEW_URL }, () => {
+        closeRecordingWindow();
+      });
+    }
+  });
+}
+
+function notifyRecordingStopping() {
+  chrome.runtime.sendMessage({
+    action: 'recordingStopping',
+    since: Date.now() - 5000
+  });
+}
+
+let stopHandlingScheduled = false;
+let finalizeInProgress = false;
+
+function scheduleHandleRecorderStop() {
+  if (stopHandlingScheduled || finalizeInProgress) return;
+  stopHandlingScheduled = true;
+  logStatus('Stopping...');
+
+  setTimeout(() => {
+    if (finalizeInProgress) {
+      stopHandlingScheduled = false;
+      return;
+    }
+    finalizeInProgress = true;
+    handleRecorderStop()
+      .finally(() => {
+        finalizeInProgress = false;
+        stopHandlingScheduled = false;
+      });
+  }, 500);
+}
+
+function resetIdleRecordingUi() {
+  setRecordingOptionsLocked(false);
+  startBtn.disabled = false;
+  stopBtn.disabled = true;
+  if (pauseBtn) {
+    pauseBtn.disabled = true;
+    pauseBtn.textContent = 'Pause';
+  }
+}
 
 // Recording State
 let recorder = null;
@@ -427,68 +498,34 @@ function attachDisplayEndHandlers(displayStream) {
     return;
   }
 
+  let shareEndedHandled = false;
+
+  function onShareEnded() {
+    if (shareEndedHandled) return;
+    shareEndedHandled = true;
+
+    console.log('Screen share ended - user stopped sharing');
+    notifyRecordingStopping();
+    stopRecordingFlow();
+  }
+
   // Method 1: Event-based detection
   // Fires when user clicks "Stop sharing" in browser UI
-  videoTrack.addEventListener('ended', () => {
-    console.log('Video track ended - user stopped sharing');
-
-    // Auto-stop recording
-    if (recorder && recorder.state !== 'inactive') {
-      stopRecordingFlow();
-    }
-
-    // REMOVED: restoreExtensionWindow() - preview will open instead
-  });
+  videoTrack.addEventListener('ended', onShareEnded);
 
   // Method 2: Polling-based detection (backup)
   // Some scenarios may not fire 'ended' event reliably
   const pollInterval = setInterval(() => {
-    // Check if track has ended
     if (videoTrack.readyState === 'ended') {
       console.log('Video track detected as ended via polling');
       clearInterval(pollInterval);
-
-      // Auto-stop recording
-      if (recorder && recorder.state !== 'inactive') {
-        stopRecordingFlow();
-      }
-
-      // REMOVED: restoreExtensionWindow() - preview will open instead
+      onShareEnded();
     }
-  }, 1000); // Check every second
+  }, 500);
 
   // Store interval ID for cleanup
   displayStream.__shareEndPollId = pollInterval;
   console.log('Screen share end detection attached');
-}
-
-/**
- * Restores and focuses the extension window
- * Brings minimized window back to normal state after recording
- */
-function restoreExtensionWindow() {
-  try {
-    chrome.windows.getCurrent(currentWindow => {
-      if (chrome.runtime.lastError) {
-        console.warn('Could not get current window:', chrome.runtime.lastError);
-        return;
-      }
-
-      // Restore from minimized state and bring to focus
-      chrome.windows.update(currentWindow.id, {
-        state: "normal",
-        focused: true
-      }, (updatedWindow) => {
-        if (chrome.runtime.lastError) {
-          console.warn('Could not restore window:', chrome.runtime.lastError);
-        } else {
-          console.log('Extension window restored and focused');
-        }
-      });
-    });
-  } catch (e) {
-    console.warn('Error restoring window:', e);
-  }
 }
 
 // ============================================================
@@ -501,13 +538,14 @@ function restoreExtensionWindow() {
  */
 async function handleRecorderStop() {
   console.log('Recorder stopped, opening preview...');
+  let openPreview = false;
   const capturedElapsedSeconds = recordingElapsedSeconds;
   const capturedStartedAt = recordingStartedAt;
   const capturedAccumulatedPauseMs = accumulatedPauseMs;
   resetRecordingTimerUi();
 
   const mimeType = normalizePlaybackMime(
-    activeRecordingConfig?.mimeType || recorder?.mimeType || 'video/webm'
+    activeRecordingConfig?.mimeType || recorder?.mimeType || 'video/mp4'
   );
   const endedAt = Date.now();
   const durationSeconds = capturedStartedAt
@@ -556,17 +594,16 @@ async function handleRecorderStop() {
     );
 
     if (blob.size === 0) {
-      logStatus('Recording failed: empty file. Try WebM format and record again.');
+      logStatus('Recording failed: empty file. Please try again.');
       return;
     }
 
     const recordingMeta = {
       mimeType,
-      format: activeRecordingConfig?.format || 'webm',
+      format: 'mp4',
       quality: activeRecordingConfig?.quality || 'low',
-      fileExtension: activeRecordingConfig?.fileExtension || 'webm',
+      fileExtension: 'mp4',
       durationSeconds: savedDurationSeconds,
-      watermarkRequired: activeEntitlements.watermarkEnabled,
       entitlements: {
         planCode: activeEntitlements.planCode,
         customFilenameEnabled: activeEntitlements.customFilenameEnabled,
@@ -584,19 +621,16 @@ async function handleRecorderStop() {
       recordingMeta
     });
 
-    chrome.storage.local.remove(['recordingData']);
-
     console.log('Recording saved to IndexedDB:', recordingId);
 
-    chrome.tabs.create({ url: PREVIEW_URL }, (tab) => {
-      console.log('Preview tab opened:', tab?.id);
-    });
+    openPreviewAndClosePopup();
+    openPreview = true;
   } catch (e) {
     console.error('Error processing recording:', e);
     if (recordedChunks.length) {
       try {
         const fallbackBlob = new Blob(recordedChunks, {
-          type: activeRecordingConfig?.mimeType || 'video/webm'
+          type: activeRecordingConfig?.mimeType || 'video/mp4'
         });
         fallbackDownload(fallbackBlob);
       } catch {
@@ -609,10 +643,10 @@ async function handleRecorderStop() {
     cleanupRecordingResources();
     activeRecordingConfig = null;
     activeMeetingCost = null;
-    logStatus('Recording complete! Preview opened in new tab.');
-    startBtn.disabled = false;
-    stopBtn.disabled = true;
     recordedChunks = [];
+    if (!openPreview) {
+      resetIdleRecordingUi();
+    }
   }
 }
 
@@ -628,7 +662,7 @@ function fallbackDownload(blob) {
     const a = document.createElement('a');
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
     a.href = url;
-    a.download = `screen-recording-${timestamp}.webm`;
+    a.download = `screen-recording-${timestamp}.mp4`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -683,6 +717,8 @@ function cleanupRecordingResources() {
   // Clear preview
   preview.srcObject = null;
 
+  setRecordingOptionsLocked(false);
+
   console.log('Resource cleanup complete');
 }
 
@@ -700,13 +736,13 @@ async function startRecordingFlow() {
   // Disable UI during setup
   startBtn.disabled = true;
   stopBtn.disabled = true;
+  setRecordingOptionsLocked(true);
   document.getElementById('settingsInstructions').style.display = 'none';
   logStatus('Preparing...');
 
   // Get user preferences from checkboxes
   const includeSystemAudio = document.getElementById('includeSystemAudio').checked;
   const includeMic = document.getElementById('includeMic').checked;
-
   // ========================================
   // STEP 1: Request Microphone Permission
   // ========================================
@@ -724,8 +760,7 @@ async function startRecordingFlow() {
       const permissionState = await checkMicPermissionState();
       if (permissionState === 'denied') {
         showMicDeniedUI();
-        startBtn.disabled = false;
-        stopBtn.disabled = true;
+        resetIdleRecordingUi();
         logStatus('Microphone permission is denied.');
         return;
       } else {
@@ -733,8 +768,7 @@ async function startRecordingFlow() {
         const proceed = confirm('Microphone access failed or was blocked. Continue without microphone?');
         if (!proceed) {
           logStatus('Recording cancelled because microphone is required.');
-          startBtn.disabled = false;
-          stopBtn.disabled = true;
+          resetIdleRecordingUi();
           return;
         }
         micStream = null;
@@ -754,16 +788,6 @@ async function startRecordingFlow() {
       audio: includeSystemAudio
     });
     console.log('Display capture started');
-
-    // Minimize extension window during recording
-    try {
-      chrome.windows.getCurrent(win => {
-        chrome.windows.update(win.id, { state: "minimized" });
-        console.log('Extension window minimized');
-      });
-    } catch (e) {
-      console.warn('Could not minimize window:', e);
-    }
 
     // Attach handlers to detect when user stops sharing
     attachDisplayEndHandlers(displayStream);
@@ -790,9 +814,7 @@ async function startRecordingFlow() {
       micStream = null;
     }
 
-    // Reset UI
-    startBtn.disabled = false;
-    stopBtn.disabled = true;
+    resetIdleRecordingUi();
     return;
   }
 
@@ -812,9 +834,7 @@ async function startRecordingFlow() {
     stopAllTracks(displayStream);
     if (micStream) stopAllTracks(micStream);
 
-    // Reset UI
-    startBtn.disabled = false;
-    stopBtn.disabled = true;
+    resetIdleRecordingUi();
     return;
   }
 
@@ -822,7 +842,7 @@ async function startRecordingFlow() {
   // STEP 4: Setup Preview
   // ========================================
   preview.srcObject = combinedStream;
-  preview.muted = true;  // Mute to avoid audio feedback
+  preview.muted = true;
   console.log('Preview stream attached');
 
   // ========================================
@@ -830,17 +850,18 @@ async function startRecordingFlow() {
   // ========================================
   console.log('Creating MediaRecorder...');
 
+  if (!isMp4RecordingSupported()) {
+    logStatus('MP4 recording is not supported. Please use Chrome 126 or newer.');
+    stopAllTracks(combinedStream);
+    stopAllTracks(displayStream);
+    if (micStream) stopAllTracks(micStream);
+    resetIdleRecordingUi();
+    return;
+  }
+
   const options = readRecordingOptions(activeEntitlements);
   activeMeetingCost = options.meetingCost;
-  activeRecordingConfig = resolveRecordingConfig(
-    options.format,
-    options.quality,
-    activeEntitlements
-  );
-
-  if (options.format === 'mp4' && activeRecordingConfig.format !== 'mp4') {
-    logStatus('MP4 not supported here — recording as WebM.');
-  }
+  activeRecordingConfig = resolveRecordingConfig(options.quality, activeEntitlements);
 
   const { recorderOptions } = activeRecordingConfig;
   try {
@@ -856,9 +877,7 @@ async function startRecordingFlow() {
     stopAllTracks(displayStream);
     if (micStream) stopAllTracks(micStream);
 
-    // Reset UI
-    startBtn.disabled = false;
-    stopBtn.disabled = true;
+    resetIdleRecordingUi();
     return;
   }
 
@@ -876,8 +895,7 @@ async function startRecordingFlow() {
   };
 
   recorder.onstop = () => {
-    // Allow final dataavailable chunk to arrive before building the blob
-    setTimeout(() => handleRecorderStop(), 1500);
+    scheduleHandleRecorderStop();
   };
 
   // Handle recorder errors
@@ -892,9 +910,10 @@ async function startRecordingFlow() {
   console.log('Starting MediaRecorder...');
 
   try {
-    // 1-second timeslice keeps WebM clusters small so Chrome can seek the full file.
+    // 1-second timeslice keeps MP4 fragments seekable in the preview player.
     recorder.start(1000);
     console.log('Recording started successfully');
+    registerRecordingSession();
   } catch (err) {
     console.error('recorder.start() failed:', err);
     logStatus('Could not start recorder: ' + (err && err.message ? err.message : err));
@@ -904,9 +923,7 @@ async function startRecordingFlow() {
     stopAllTracks(displayStream);
     if (micStream) stopAllTracks(micStream);
 
-    // Reset UI
-    startBtn.disabled = false;
-    stopBtn.disabled = true;
+    resetIdleRecordingUi();
     return;
   }
 
@@ -914,7 +931,7 @@ async function startRecordingFlow() {
   stopBtn.disabled = false;
   if (pauseBtn) pauseBtn.disabled = false;
   startRecordingTimer();
-  logStatus(`Recording (${activeRecordingConfig.quality} · ${activeRecordingConfig.format.toUpperCase()})…`);
+  logStatus(`Recording (${activeRecordingConfig.quality} · MP4)…`);
   console.log('Recording flow complete - now recording');
 }
 
@@ -928,9 +945,9 @@ async function startRecordingFlow() {
  */
 function stopRecordingFlow() {
   console.log('Stopping recording flow...');
+  notifyRecordingStopping();
 
   if (recorder && recorder.state !== 'inactive') {
-    logStatus('Stopping...');
     try {
       if (typeof recorder.requestData === 'function') {
         recorder.requestData();
@@ -939,16 +956,14 @@ function stopRecordingFlow() {
       console.log('Recorder stopped');
     } catch (e) {
       console.warn('Error stopping recorder:', e);
+      scheduleHandleRecorderStop();
     }
-  } else {
-    console.log('Recorder not active, performing manual cleanup');
-    resetRecordingTimerUi();
-    cleanupRecordingResources();
-
-    logStatus('Stopped.');
-    startBtn.disabled = false;
-    stopBtn.disabled = true;
+    return;
   }
+
+  // Track may have ended first (Stop sharing) — recorder already inactive
+  console.log('Recorder already inactive, scheduling save and preview');
+  scheduleHandleRecorderStop();
 }
 
 // ============================================================

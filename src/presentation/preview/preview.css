@@ -107,19 +107,6 @@ body {
   display: block;
 }
 
-.watermark-overlay {
-  position: absolute;
-  right: 16px;
-  bottom: 16px;
-  padding: 6px 10px;
-  border-radius: 6px;
-  background: rgba(0, 0, 0, 0.45);
-  color: #fff;
-  font-size: 12px;
-  font-weight: 600;
-  pointer-events: none;
-}
-
 .info-bar {
   display: flex;
   justify-content: space-around;
@@ -157,9 +144,16 @@ body {
 }
 
 .section-title {
-  margin: 0 0 14px;
+  margin: 0 0 8px;
   font-size: 15px;
   font-weight: 600;
+}
+
+.export-note {
+  margin: 0 0 14px;
+  font-size: 13px;
+  color: var(--re-text-muted);
+  line-height: 1.4;
 }
 
 .export-grid {
@@ -285,30 +279,6 @@ body {
   background: var(--re-bg);
   border: 1px solid var(--re-border);
   font-size: 13px;
-}
-
-.export-progress {
-  margin-top: 12px;
-}
-
-.export-progress-bar {
-  height: 6px;
-  background: var(--re-border);
-  border-radius: 999px;
-  overflow: hidden;
-  margin-bottom: 6px;
-}
-
-#exportProgressFill {
-  height: 100%;
-  width: 0;
-  background: var(--re-primary);
-  transition: width 0.2s ease;
-}
-
-#exportProgressText {
-  font-size: 12px;
-  color: var(--re-text-muted);
 }
 
 .actions {

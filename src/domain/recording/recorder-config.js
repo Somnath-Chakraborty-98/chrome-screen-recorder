@@ -1,7 +1,6 @@
 import { capQuality } from './presets.js';
 
 /** @typedef {'low'|'medium'|'high'} QualityLevel */
-/** @typedef {'webm'|'mp4'} RecordingFormat */
 
 export const QUALITY_BITRATES = Object.freeze({
   low: { videoBitsPerSecond: 800_000, audioBitsPerSecond: 64_000 },
@@ -9,26 +8,7 @@ export const QUALITY_BITRATES = Object.freeze({
   high: { videoBitsPerSecond: 5_000_000, audioBitsPerSecond: 192_000 }
 });
 
-// VP8 + Opus first — best Chrome <video> playback compatibility
-const WEBM_CANDIDATES = {
-  high: [
-    'video/webm;codecs=vp8,opus',
-    'video/webm;codecs=vp9,opus',
-    'video/webm;codecs=vp8',
-    'video/webm'
-  ],
-  medium: [
-    'video/webm;codecs=vp8,opus',
-    'video/webm;codecs=vp8',
-    'video/webm'
-  ],
-  low: [
-    'video/webm;codecs=vp8,opus',
-    'video/webm;codecs=vp8',
-    'video/webm'
-  ]
-};
-
+// H.264 + AAC only — Films & TV / Windows native playback (Chrome 126+)
 const MP4_CANDIDATES = [
   'video/mp4;codecs=avc1,mp4a.40.2',
   'video/mp4;codecs=h264,aac',
@@ -52,44 +32,23 @@ function pickSupportedMimeType(candidates) {
 }
 
 /**
- * @param {RecordingFormat} format
  * @param {QualityLevel} quality
- * @param {{ mp4Enabled: boolean, maxQuality: QualityLevel }} entitlements
+ * @param {{ maxQuality: QualityLevel }} entitlements
  */
-export function resolveRecordingConfig(format, quality, entitlements) {
+export function resolveRecordingConfig(quality, entitlements) {
   const cappedQuality = capQuality(quality, entitlements.maxQuality);
-  let requestedFormat = format;
-
-  if (format === 'mp4' && !entitlements.mp4Enabled) {
-    requestedFormat = 'webm';
-  }
-
   const bitrates = QUALITY_BITRATES[cappedQuality];
-  let mimeType = '';
-  let actualFormat = requestedFormat;
-
-  if (requestedFormat === 'mp4') {
-    mimeType = pickSupportedMimeType(MP4_CANDIDATES);
-    if (!mimeType) {
-      actualFormat = 'webm';
-      mimeType = pickSupportedMimeType(WEBM_CANDIDATES[cappedQuality]);
-    }
-  } else {
-    mimeType = pickSupportedMimeType(WEBM_CANDIDATES[cappedQuality]);
-  }
+  const mimeType = pickSupportedMimeType(MP4_CANDIDATES);
 
   if (!mimeType) {
-    mimeType = pickSupportedMimeType([...WEBM_CANDIDATES.high, 'video/webm']);
-    actualFormat = 'webm';
+    throw new Error('MP4 recording is not supported in this browser. Please use Chrome 126 or newer.');
   }
-
-  const fileExtension = actualFormat === 'mp4' || mimeType.includes('mp4') ? 'mp4' : 'webm';
 
   return {
     mimeType,
-    format: actualFormat,
+    format: 'mp4',
     quality: cappedQuality,
-    fileExtension,
+    fileExtension: 'mp4',
     recorderOptions: {
       mimeType,
       videoBitsPerSecond: bitrates.videoBitsPerSecond,
@@ -99,14 +58,8 @@ export function resolveRecordingConfig(format, quality, entitlements) {
 }
 
 /**
- * @param {number} bytes
- * @param {QualityLevel} quality
+ * @returns {boolean}
  */
-export function estimateSizeLabel(bytes, quality) {
-  const factors = { low: 0.6, medium: 1, high: 1.6 };
-  const adjusted = bytes * (factors[quality] || 1);
-  if (adjusted < 1024 * 1024) {
-    return `~${(adjusted / 1024).toFixed(0)} KB`;
-  }
-  return `~${(adjusted / (1024 * 1024)).toFixed(1)} MB`;
+export function isMp4RecordingSupported() {
+  return Boolean(pickSupportedMimeType(MP4_CANDIDATES));
 }

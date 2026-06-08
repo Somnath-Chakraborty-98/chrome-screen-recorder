@@ -20,42 +20,24 @@
     <span id="meetingType"></span>
   </div>
 
-  <section class="options-section re-card record-options" id="recordingSetupSection">
-    <button type="button" class="section-collapse-toggle" id="recordingSetupToggle" aria-expanded="true" aria-controls="recordingSetupBody">
-      <span class="section-title">Recording setup</span>
-      <span class="collapse-icon" aria-hidden="true">▾</span>
-    </button>
-
-    <div id="recordingSetupBody" class="section-body">
-      <fieldset class="format-fieldset">
-        <legend class="re-label">Format</legend>
-        <div class="format-options-row">
-          <label class="radio-label">
-            <input type="radio" name="format" id="formatWebm" value="webm" checked />
-            WebM
-          </label>
-          <label class="radio-label format-locked" id="formatMp4Label">
-            <input type="radio" name="format" id="formatMp4" value="mp4" disabled />
-            MP4
-            <a id="mp4Lock" class="option-lock" href="#" target="_blank" title="Upgrade for MP4">🔒</a>
-          </label>
-        </div>
-      </fieldset>
-
-      <div id="meetingCostSection" class="meeting-cost-section">
-        <label class="checkbox-label">
-          <input type="checkbox" id="meetingCostToggle" />
-          Meeting Cost Calculator
-          <a id="meetingCostLock" class="option-lock hidden" href="#" target="_blank" title="Plus/Pro feature">🔒</a>
-        </label>
-        <div id="hourlyRateBlock" class="hourly-rate-block hidden">
-          <label class="re-label" for="hourlyRateInput">Hourly rate (₹)</label>
-          <input class="re-input" id="hourlyRateInput" type="number" min="0" step="50" value="1500" disabled />
-        </div>
+  <section class="options-section re-card meeting-cost-card">
+    <div id="meetingCostSection" class="meeting-cost-section">
+      <label class="checkbox-label">
+        <input type="checkbox" id="meetingCostToggle" />
+        Meeting Cost Calculator
+        <a id="meetingCostLock" class="option-lock hidden" href="#" target="_blank" title="Plus/Pro feature">🔒</a>
+      </label>
+      <div id="hourlyRateBlock" class="hourly-rate-block hidden">
+        <label class="re-label" for="hourlyRateInput">Hourly rate (₹)</label>
+        <input class="re-input" id="hourlyRateInput" type="number" min="0" step="50" value="1500" disabled />
       </div>
-
-      <p id="setupSignInHint" class="setup-signin-hint hidden">Sign in to check all features</p>
     </div>
+    <p id="setupSignInHint" class="setup-signin-hint hidden">Sign in to check all features</p>
+  </section>
+
+  <section class="options-section re-card quality-card">
+    <span class="re-label">Quality</span>
+    <div id="qualityOptions" class="quality-options-list"></div>
   </section>
 
   <section class="options-section">

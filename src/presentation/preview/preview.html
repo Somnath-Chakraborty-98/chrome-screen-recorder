@@ -43,7 +43,6 @@
     <div class="video-container is-loading">
       <video id="recordedVideo" controls preload="auto" playsinline></video>
       <div id="videoLoading" class="video-loading">Loading recording…</div>
-      <div id="watermarkOverlay" class="watermark-overlay hidden">RecordEasy</div>
     </div>
 
 
@@ -70,7 +69,7 @@
 
         <span class="label">Recorded</span>
 
-        <span id="recordedFormat" class="value">WebM</span>
+        <span id="recordedFormat" class="value">MP4</span>
 
       </div>
 
@@ -80,33 +79,9 @@
 
     <section class="export-section re-card">
 
-      <h2 class="section-title">Export options</h2>
+      <h2 class="section-title">Download MP4</h2>
 
-
-
-      <div class="export-grid">
-
-        <div class="export-group">
-
-          <span class="export-group-label">Quality</span>
-
-          <div id="qualityOptions" class="option-list"></div>
-
-        </div>
-
-
-
-        <div class="export-group">
-
-          <span class="export-group-label">Format</span>
-
-          <div id="formatOptions" class="option-list"></div>
-
-        </div>
-
-      </div>
-
-
+      <p class="export-note">Your recording is saved as MP4. Quality was set when you recorded.</p>
 
       <div class="filename-block">
 
@@ -147,14 +122,6 @@
 
 
     <div id="statusMessage" class="status-message hidden"></div>
-
-    <div id="exportProgress" class="export-progress hidden">
-
-      <div class="export-progress-bar"><div id="exportProgressFill"></div></div>
-
-      <span id="exportProgressText">Preparing export…</span>
-
-    </div>
 
   </div>
 
